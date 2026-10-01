@@ -119,7 +119,11 @@ def main() -> int:
     generated.mkdir(parents=True, exist_ok=True)
     run(sys.executable, str(TOOLS / "generate_level_manifest.py"), "--rom", str(goldeneye),
         "--level", args.level, "--out", str(generated / f"{args.level}.json"))
-    if (libsm64 / "facility-backup").is_dir():
+    level_marker = libsm64 / ".mario-goldeneye-level"
+    if args.level == "dam" and (not level_marker.is_file() or level_marker.read_text().strip() != "dam"):
+        run(sys.executable, str(TOOLS / "switch_level.py"), "--rom", str(goldeneye),
+            "--level", args.level, "--libsm64", str(libsm64))
+    elif (libsm64 / "facility-backup").is_dir():
         print("Facility prototype is already installed; preserving its backup.")
     else:
         run(sys.executable, str(TOOLS / "install_facility.py"), "--rom", str(goldeneye),
