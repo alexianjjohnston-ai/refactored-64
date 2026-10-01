@@ -1,0 +1,18 @@
+#!/bin/sh
+set -eu
+
+ROOT=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+LIBSM64="$HOME/Projects/n64-mashup/libsm64"
+LIBSM64_REVISION="fd11813208272b4271d92bd92feb8f3fdbe61be5"
+
+echo "Updating refactored-64..."
+git -C "$ROOT" pull --ff-only
+
+# Legacy sandbox: Mario/libsm64 running imported GoldenEye geometry.
+# Kept only for experiments; the default run path is now GoldenEye-base.
+if [ -d "$LIBSM64/.git" ]; then
+  git -C "$LIBSM64" reset --hard "$LIBSM64_REVISION"
+  git -C "$LIBSM64" clean -fd
+fi
+
+exec python3 "$ROOT/setup_local.py" --level dam --run "$@"
