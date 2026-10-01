@@ -46,7 +46,7 @@ int goldeneye_intro_camera_target(float target[3]);
 
 def c_source(data: dict) -> str:
     cameras = ",\n".join(
-        "    {{ {%s, %s, %s}, %s, %s }}"
+        "    { {%s, %s, %s}, %s, %s }"
         % (
             _fmt(camera["position"][0]),
             _fmt(camera["position"][1]),
@@ -57,7 +57,7 @@ def c_source(data: dict) -> str:
         for camera in data["cameras"]
     )
     swirls = ",\n".join(
-        "    {{ %du, {%s, %s, %s}, %s, %s }}"
+        "    { %du, {%s, %s, %s}, %s, %s }"
         % (
             swirl["flags"],
             _fmt(swirl["offset"][0]),
