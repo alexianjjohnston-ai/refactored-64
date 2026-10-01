@@ -92,6 +92,7 @@ def main() -> int:
     parser.add_argument("--generated", type=Path, default=Path.home() / "Projects/n64-mashup/generated")
     parser.add_argument("--clone-url", default="https://github.com/libsm64/libsm64.git")
     parser.add_argument("--level", choices=("dam", "facility"), default="dam")
+    parser.add_argument("--debug-gameplay", action="store_true", help="Install the old temporary billboard/enemy debug layer")
     parser.add_argument("--no-build", action="store_true")
     parser.add_argument("--run", action="store_true", help="Launch run-test after a successful build")
     args = parser.parse_args()
@@ -154,7 +155,11 @@ def main() -> int:
     run(sys.executable, str(TOOLS / "install_coins.py"), "--libsm64", str(libsm64), "--rom", str(goldeneye), "--coin-assets", str(generated / "sm64"), "--level", args.level)
     run(sys.executable, str(TOOLS / "install_intro.py"), "--libsm64", str(libsm64), "--rom", str(goldeneye), "--level", args.level)
     run(sys.executable, str(TOOLS / "install_ui.py"), "--libsm64", str(libsm64), "--sm64-assets", str(generated / "sm64"), "--goldeneye-assets", str(generated / "goldeneye"))
-    run(sys.executable, str(TOOLS / "install_gameplay.py"), "--libsm64", str(libsm64), "--rom", str(goldeneye), "--level", args.level)
+    if args.debug_gameplay:
+        run(sys.executable, str(TOOLS / "install_gameplay.py"), "--libsm64", str(libsm64), "--rom", str(goldeneye), "--level", args.level)
+    else:
+        print("Skipping placeholder gameplay layer. Use --debug-gameplay only for temporary billboard/enemy testing.")
+        print("Real merge target: GoldenEye base game with Mario actor/physics adapter; see docs/GOLDENEYE_BASE_PIVOT.md.")
 
     if not args.no_build:
         (libsm64 / "run-test").unlink(missing_ok=True)
