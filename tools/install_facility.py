@@ -5,11 +5,22 @@ Format references: goldeneye-pc-port src/game/bg.c, tools_pc/bg_gdl_census.py.
 """
 import argparse, collections, hashlib, json, math, pathlib, shutil, struct, zlib
 
-def extract(rom):
+LEVELS = {
+    # ROM offsets come from the US GoldenEye asset table used by the reference
+    # port. They identify the compressed background segment, not a distributed
+    # asset; the user's ROM remains the only source.
+    'facility': (0x630000, 'facility'),
+    'dam': (0x5ffc50, 'dam'),
+}
+
+def extract(rom, level='facility'):
     if hashlib.sha1(rom).hexdigest() != 'abe01e4aeb033b6c0836819f549c791b26cfde83':
         raise ValueError('Expected the original US GoldenEye .z64 ROM.')
-    # US filelist.u.csv: bg_ark_all_p (Facility).
-    data = rom[6487536:]
+    try:
+        segment_start, _ = LEVELS[level]
+    except KeyError as error:
+        raise ValueError(f'Unsupported GoldenEye level: {level}') from error
+    data = rom[segment_start:]
     off = struct.unpack_from('>I', data, 4)[0] & 0xffffff
     rooms = []
     while off + 24 <= len(data):
@@ -90,19 +101,27 @@ def extract(rom):
         if higher and 220 < min(higher)-y < 1000:
             spawn=(x,y+15,z);break
     else:
-        raise ValueError('No safe spawn found')
+        if not floors:
+            raise ValueError('No candidate floor found')
+        # Some outdoor levels have no ceiling triangle above the largest
+        # playable floor. Use that floor and let the runtime collision check
+        # handle the final safe placement.
+        _,x,y,z,rid = max(floors)
+        spawn=(x,y+15,z)
     # Center the whole map within SM64's +/-8192 spatial collision grid.
     origin=tuple((min(p[k] for t in tris for p in t)+max(p[k] for t in tris for p in t))/2 if k != 1 else spawn[1]-15 for k in range(3))
-    spawn=tuple(round((spawn[k]-origin[k])*1.2) for k in range(3))
-    tris=[[[round((p[k]-origin[k])*1.2) for k in range(3)] for p in t] for t in tris]
+    horizontal_extent=max(abs(p[k]-origin[k]) for t in tris for p in t for k in (0,2))
+    scale=min(1.2, 8000/max(horizontal_extent, 1))
+    spawn=tuple(round((spawn[k]-origin[k])*scale) for k in range(3))
+    tris=[[[round((p[k]-origin[k])*scale) for k in range(3)] for p in t] for t in tris]
     if max(abs(p[k]) for t in tris for p in t for k in (0,2))>8100:
-        raise ValueError('Facility exceeds SM64 collision bounds')
+        raise ValueError(f'{level.title()} exceeds SM64 collision bounds')
     return tris,colors,spawn,rid
 
-def install(root,rom):
+def install(root,rom,level='facility'):
     if not (root/'src/libsm64.h').is_file() or not (root/'test/main.cpp').is_file():
         raise ValueError('libsm64 checkout not found: use --libsm64 with its folder path.')
-    tris,colors,spawn,rid=extract(rom.read_bytes())
+    tris,colors,spawn,rid=extract(rom.read_bytes(), level)
     paths=['test/main.cpp','test/level.c','test/level.h','test/gl20/gl20_renderer.c','Makefile']
     backup=root/'facility-backup'
     if backup.exists():
@@ -150,7 +169,7 @@ def install(root,rom):
     mk=mk.replace('\tlipo -create -output $@ $@.arm64 $@.x86_64\n\trm $@.arm64 $@.x86_64',
                   '\tlipo -create -output $@ $@.arm64 $@.x86_64\n\tinstall_name_tool -id @executable_path/dist/libsm64.dylib $@\n\trm $@.arm64 $@.x86_64')
     (root/'Makefile').write_text(mk)
-    print(f'Installed {len(tris):,} Facility triangles from 77 rooms. Spawn room {rid}.')
+    print(f'Installed {len(tris):,} {level.title()} triangles. Spawn room {rid}.')
     print('Geometry-only prototype: no GoldenEye textures, doors, guards, or weapons yet.')
     print('Backup:',backup)
 
@@ -158,6 +177,7 @@ if __name__=='__main__':
     p=argparse.ArgumentParser(description=__doc__)
     p.add_argument('--libsm64',type=pathlib.Path,default=pathlib.Path.home()/'Projects/n64-mashup/libsm64')
     p.add_argument('--rom',type=pathlib.Path,help='US GoldenEye ROM; defaults to finding it in Downloads')
+    p.add_argument('--level',choices=sorted(LEVELS),default='facility')
     p.add_argument('--check',action='store_true')
     a=p.parse_args()
     if a.rom is None:
@@ -167,5 +187,5 @@ if __name__=='__main__':
         if a.rom is None:
             p.error('US GoldenEye ROM not found in Downloads. Supply --rom "/path/to/GoldenEye.z64".')
     if a.check:
-        t,c,s,r=extract(a.rom.read_bytes());print(json.dumps({'triangles':len(t),'spawn':s,'spawn_room':r}))
-    else:install(a.libsm64.resolve(),a.rom.expanduser())
+        t,c,s,r=extract(a.rom.read_bytes(), a.level);print(json.dumps({'level':a.level,'triangles':len(t),'spawn':s,'spawn_room':r}))
+    else:install(a.libsm64.resolve(),a.rom.expanduser(),a.level)

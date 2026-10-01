@@ -93,6 +93,7 @@ def main() -> int:
     parser.add_argument("--libsm64", type=Path, default=Path.home() / "Projects/n64-mashup/libsm64")
     parser.add_argument("--generated", type=Path, default=Path.home() / "Projects/n64-mashup/generated")
     parser.add_argument("--clone-url", default="https://github.com/libsm64/libsm64.git")
+    parser.add_argument("--level", choices=("dam", "facility"), default="dam")
     parser.add_argument("--no-build", action="store_true")
     args = parser.parse_args()
 
@@ -117,12 +118,12 @@ def main() -> int:
     generated = args.generated.expanduser().resolve()
     generated.mkdir(parents=True, exist_ok=True)
     run(sys.executable, str(TOOLS / "generate_level_manifest.py"), "--rom", str(goldeneye),
-        "--out", str(generated / "facility.json"))
+        "--level", args.level, "--out", str(generated / f"{args.level}.json"))
     if (libsm64 / "facility-backup").is_dir():
         print("Facility prototype is already installed; preserving its backup.")
     else:
         run(sys.executable, str(TOOLS / "install_facility.py"), "--rom", str(goldeneye),
-            "--libsm64", str(libsm64))
+            "--level", args.level, "--libsm64", str(libsm64))
     if (libsm64 / "camera-backup").is_dir():
         print("Camera patch is already installed; preserving its backup.")
     else:

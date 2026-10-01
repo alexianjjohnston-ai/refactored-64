@@ -10,7 +10,7 @@ import sys
 TOOLS = Path(__file__).resolve().parent
 sys.path.insert(0, str(TOOLS))
 
-from install_facility import extract  # noqa: E402
+from install_facility import LEVELS, extract  # noqa: E402
 from level_manifest import facility_manifest, write_manifest  # noqa: E402
 
 EXPECTED_SHA1 = "abe01e4aeb033b6c0836819f549c791b26cfde83"
@@ -20,6 +20,7 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--rom", type=Path, required=True)
     parser.add_argument("--out", type=Path, required=True)
+    parser.add_argument("--level", choices=sorted(LEVELS), default="facility")
     args = parser.parse_args()
     rom = args.rom.expanduser().resolve()
     if not rom.is_file():
@@ -27,9 +28,9 @@ def main() -> int:
     digest = hashlib.sha1(rom.read_bytes()).hexdigest()
     if digest != EXPECTED_SHA1:
         parser.error("Expected the original US GoldenEye .z64 ROM.")
-    triangles, colors, spawn, room = extract(rom.read_bytes())
-    write_manifest(facility_manifest(triangles, colors, spawn, room), args.out.expanduser().resolve())
-    print(f"Wrote Facility manifest with {len(triangles):,} triangles: {args.out}")
+    triangles, colors, spawn, room = extract(rom.read_bytes(), args.level)
+    write_manifest(facility_manifest(triangles, colors, spawn, room, args.level), args.out.expanduser().resolve())
+    print(f"Wrote {args.level.title()} manifest with {len(triangles):,} triangles: {args.out}")
     return 0
 
 

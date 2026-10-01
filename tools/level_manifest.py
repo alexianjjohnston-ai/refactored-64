@@ -15,12 +15,12 @@ SCHEMA_VERSION = 1
 GAME = "goldeneye"
 
 
-def facility_manifest(triangles, colors, spawn, spawn_room):
+def facility_manifest(triangles, colors, spawn, spawn_room, level="facility"):
     """Build the portable representation returned by the Facility extractor."""
     return {
         "schema": SCHEMA_VERSION,
         "game": GAME,
-        "level": "facility",
+        "level": level,
         "source": {
             "kind": "goldeneye-rom",
             "region": "US",
@@ -41,7 +41,7 @@ def facility_manifest(triangles, colors, spawn, spawn_room):
         "interactables": [],
         "actors": [],
         "mission": {
-            "id": "facility-00",
+            "id": f"{level}-00",
             "objectives": [],
             "completion": None,
         },

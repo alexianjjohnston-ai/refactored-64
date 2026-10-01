@@ -90,6 +90,9 @@ Facility data from ROMs stored on the device:
 python3 setup_local.py
 ```
 
+The default target is the first GoldenEye campaign mission, Dam. Use
+`--level facility` only when you specifically want the prototype level.
+
 It searches common folders such as `Downloads`, `Desktop/N64`, and
 `Documents/N64`. You can also provide a folder explicitly:
 
