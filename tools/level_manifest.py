@@ -11,9 +11,10 @@ import math
 from pathlib import Path
 from typing import Any
 
+from project_constants import GOLDENEYE_WORLD_SCALE
+
 SCHEMA_VERSION = 1
 GAME = "goldeneye"
-WORLD_SCALE = 3.0
 
 
 def facility_manifest(triangles, colors, spawn, spawn_room, level="facility", materials=None):
@@ -28,7 +29,7 @@ def facility_manifest(triangles, colors, spawn, spawn_room, level="facility", ma
             "rom_stays_local": True,
         },
         "geometry": {
-            "coordinate_scale": WORLD_SCALE,
+            "coordinate_scale": GOLDENEYE_WORLD_SCALE,
             "triangles": [
                 {
                     "vertices": [list(vertex) for vertex in triangle],

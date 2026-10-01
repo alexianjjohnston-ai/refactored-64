@@ -5,6 +5,8 @@ Format references: goldeneye-pc-port src/game/bg.c, tools_pc/bg_gdl_census.py.
 """
 import argparse, collections, hashlib, json, math, pathlib, shutil, struct, zlib
 
+from project_constants import GOLDENEYE_WORLD_SCALE
+
 LEVELS = {
     # ROM offsets come from the US GoldenEye asset table used by the reference
     # port. They identify the compressed background segment, not a distributed
@@ -12,11 +14,6 @@ LEVELS = {
     'facility': (0x630000, 'facility'),
     'dam': (0x5ffc50, 'dam'),
 }
-
-# GoldenEye background vertices are much smaller than libsm64's Mario units.
-# Keep the whole level in a signed 16-bit-friendly range while making rooms
-# read at a useful scale beside Mario.
-WORLD_SCALE = 3.0
 
 def extract(rom, level='facility', include_materials=False):
     if hashlib.sha1(rom).hexdigest() != 'abe01e4aeb033b6c0836819f549c791b26cfde83':
@@ -134,7 +131,7 @@ def extract(rom, level='facility', include_materials=False):
     # scale used by Mario. The old 1.2 cap made Dam look miniature in-game.
     origin=tuple((min(p[k] for t in tris for p in t)+max(p[k] for t in tris for p in t))/2 if k != 1 else spawn[1]-15 for k in range(3))
     horizontal_extent=max(abs(p[k]-origin[k]) for t in tris for p in t for k in (0,2))
-    scale=min(WORLD_SCALE, 24000/max(horizontal_extent, 1))
+    scale = GOLDENEYE_WORLD_SCALE
     spawn=tuple(round((spawn[k]-origin[k])*scale) for k in range(3))
     tris=[[[round((p[k]-origin[k])*scale) for k in range(3)] for p in t] for t in tris]
     if max(abs(p[k]) for t in tris for p in t for k in (0,2))>30000:
