@@ -128,13 +128,16 @@ def main() -> int:
 
     level_marker = libsm64 / ".mario-goldeneye-level"
     installed_level = level_marker.read_text().strip() if level_marker.is_file() else None
-    if installed_level == args.level and (libsm64 / "facility-backup").is_dir():
+    has_reversible_backup = (libsm64 / "facility-backup").is_dir()
+    if installed_level == args.level and has_reversible_backup:
         run(sys.executable, str(TOOLS / "refresh_level.py"), "--rom", str(goldeneye), "--level", args.level, "--libsm64", str(libsm64))
-    elif args.level == "dam" and installed_level != "dam":
-        run(sys.executable, str(TOOLS / "switch_level.py"), "--rom", str(goldeneye), "--level", args.level, "--libsm64", str(libsm64))
-    elif (libsm64 / "facility-backup").is_dir():
-        run(sys.executable, str(TOOLS / "refresh_level.py"), "--rom", str(goldeneye), "--level", args.level, "--libsm64", str(libsm64))
+    elif has_reversible_backup:
+        if args.level == "dam" and installed_level != "dam":
+            run(sys.executable, str(TOOLS / "switch_level.py"), "--rom", str(goldeneye), "--level", args.level, "--libsm64", str(libsm64))
+        else:
+            run(sys.executable, str(TOOLS / "refresh_level.py"), "--rom", str(goldeneye), "--level", args.level, "--libsm64", str(libsm64))
     else:
+        print("No reversible level backup found; installing level from clean libsm64 checkout.")
         run(sys.executable, str(TOOLS / "install_facility.py"), "--rom", str(goldeneye), "--level", args.level, "--libsm64", str(libsm64))
 
     if (libsm64 / "camera-backup").is_dir():
