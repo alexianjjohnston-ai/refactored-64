@@ -18,7 +18,7 @@ LEVELS = {
 # read at a useful scale beside Mario.
 WORLD_SCALE = 3.0
 
-def extract(rom, level='facility'):
+def extract(rom, level='facility', include_materials=False):
     if hashlib.sha1(rom).hexdigest() != 'abe01e4aeb033b6c0836819f549c791b26cfde83':
         raise ValueError('Expected the original US GoldenEye .z64 ROM.')
     try:
@@ -36,7 +36,7 @@ def extract(rom, level='facility'):
             break
         if len(rooms) > 256:
             raise ValueError('Invalid room table')
-    tris, colors, room_ids = [], [], []
+    tris, colors, room_ids, material_ids = [], [], [], []
     def inflate(address):
         offset = address & 0xffffff
         if data[offset:offset+2] != b'\x11\x72':
@@ -51,9 +51,15 @@ def extract(rom, level='facility'):
             if not address:
                 continue
             gdl = inflate(address)
+            current_material = 0
             for o in range(0, len(gdl)//8*8, 8):
                 w0,w1 = struct.unpack_from('>II',gdl,o)
                 op = w0 >> 24
+                # GoldenEye's background display lists use G_NOOP as a
+                # texture-number marker; the game resolves it through the
+                # global image table before rendering the room.
+                if op == 0:
+                    current_material = w1 & 0xfff
                 if op == 4:
                     n, start = ((w0 >> 20)&15)+1, (w0 >> 16)&15
                     vo = w1 & 0xffffff
@@ -80,6 +86,7 @@ def extract(rom, level='facility'):
                     if sum(v*v for v in norm) < 1:
                         continue
                     tris.append(pts);colors.append([cache[i][1] for i in ix]);room_ids.append(room_id)
+                    material_ids.append(current_material)
     if len(tris) < 1000:
         raise ValueError('Too few Facility triangles')
     # Choose a large horizontal interior floor with overhead clearance.
@@ -122,6 +129,8 @@ def extract(rom, level='facility'):
     tris=[[[round((p[k]-origin[k])*scale) for k in range(3)] for p in t] for t in tris]
     if max(abs(p[k]) for t in tris for p in t for k in (0,2))>30000:
         raise ValueError(f'{level.title()} exceeds the supported collision bounds')
+    if include_materials:
+        return tris, colors, spawn, rid, material_ids
     return tris,colors,spawn,rid
 
 def install(root,rom,level='facility'):

@@ -119,6 +119,9 @@ def main() -> int:
     generated.mkdir(parents=True, exist_ok=True)
     run(sys.executable, str(TOOLS / "generate_level_manifest.py"), "--rom", str(goldeneye),
         "--level", args.level, "--out", str(generated / f"{args.level}.json"))
+    run(sys.executable, str(TOOLS / "extract_goldeneye_textures.py"),
+        "--rom", str(goldeneye), "--manifest", str(generated / f"{args.level}.json"),
+        "--out", str(generated / f"{args.level}-textures"))
     level_marker = libsm64 / ".mario-goldeneye-level"
     if args.level == "dam" and (not level_marker.is_file() or level_marker.read_text().strip() != "dam"):
         run(sys.executable, str(TOOLS / "switch_level.py"), "--rom", str(goldeneye),

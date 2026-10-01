@@ -16,7 +16,7 @@ GAME = "goldeneye"
 WORLD_SCALE = 3.0
 
 
-def facility_manifest(triangles, colors, spawn, spawn_room, level="facility"):
+def facility_manifest(triangles, colors, spawn, spawn_room, level="facility", materials=None):
     """Build the portable representation returned by the Facility extractor."""
     return {
         "schema": SCHEMA_VERSION,
@@ -33,8 +33,9 @@ def facility_manifest(triangles, colors, spawn, spawn_room, level="facility"):
                 {
                     "vertices": [list(vertex) for vertex in triangle],
                     "colors": [list(color) for color in triangle_colors],
+                    "material_id": (materials[index] if materials is not None else 0),
                 }
-                for triangle, triangle_colors in zip(triangles, colors)
+                for index, (triangle, triangle_colors) in enumerate(zip(triangles, colors))
             ],
         },
         "spawn": {"position": list(spawn), "room": spawn_room},
