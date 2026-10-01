@@ -30,6 +30,34 @@ def replace_range(source: str, start: str, end: str, new: str, name: str) -> str
     return source[:start_index] + new + source[end_index:]
 
 
+def replace_c_function(source: str, signature_start: str, replacement: str, name: str) -> str:
+    """Replace a generated C function by matching its outer braces."""
+    start = source.find(signature_start)
+    if start < 0:
+        raise ValueError(f"Could not find start of {name}")
+
+    brace = source.find("{", start)
+    if brace < 0:
+        raise ValueError(f"Could not find opening brace of {name}")
+
+    depth = 0
+    index = brace
+    while index < len(source):
+        char = source[index]
+        if char == "{":
+            depth += 1
+        elif char == "}":
+            depth -= 1
+            if depth == 0:
+                end = index + 1
+                while end < len(source) and source[end] in " \t\r\n":
+                    end += 1
+                return source[:start] + replacement + "\n\n" + source[end:]
+        index += 1
+
+    raise ValueError(f"Could not find closing brace of {name}")
+
+
 def patch_intro_header(path: Path) -> None:
     source = path.read_text(encoding="utf-8")
     if "goldeneye_intro_start" not in source:
@@ -182,12 +210,10 @@ static void draw_intro_overlay(void)
     }
     gPrevPause=pauseDown; gPrevLeft=leftDown; gPrevRight=rightDown;
 }
-
 '''
-    source = replace_range(
+    source = replace_c_function(
         source,
         "void mario_goldeneye_ui_handle_input",
-        "int mario_goldeneye_ui_paused",
         new_handle,
         "UI input handler",
     )
@@ -215,15 +241,12 @@ static void draw_intro_overlay(void)
     end_2d();
 }
 '''
-    source = replace_range(
+    source = replace_c_function(
         source,
         "void mario_goldeneye_ui_draw_gl20",
-        "\n'''\n    return (template",
         new_draw,
         "UI draw function",
     )
-    if "\n'''\n    return (template" not in source:
-        raise ValueError("UI template delimiter missing after draw replacement")
     path.write_text(source, encoding="utf-8")
 
 
