@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
-"""Install the first playable merged gameplay layer: gun, guards, Mario enemies."""
+"""Install the playable merged gameplay layer: gun, guards, Mario enemies."""
 from __future__ import annotations
 
 import argparse
 import json
+import math
 from pathlib import Path
 import shutil
 
@@ -13,8 +14,13 @@ from stan_collision import dam_mission_start, extract_dam_stan
 
 MARKER = "// MARIO_GOLDENEYE_GAMEPLAY_V1"
 BACKUP = "gameplay-backup"
-GOOMBA_COUNT = 5
-GUARD_COUNT = 6
+GOOMBA_COUNT = 8
+GUARD_COUNT = 8
+NEAR_TEST_TARGETS = 5
+
+
+def _distance(a, b):
+    return math.sqrt(sum((a[i] - b[i]) ** 2 for i in range(3)))
 
 
 def header_source() -> str:
@@ -47,7 +53,7 @@ def _rows(enemies):
     for enemy in enemies:
         x, y, z = enemy["point"]
         rows.append(
-            "    {{%.3ff, %.3ff, %.3ff}, %.3ff, %d, 1, %d, 0.0f, 0}"
+            "    {{%.3ff, %.3ff, %.3ff}, %.3ff, %d, 1, %d, 0.0f, 0, 0}"
             % (x, y + enemy["height_offset"], z, y, enemy["type"], enemy["health"])
         )
     return ",\n".join(rows)
@@ -69,7 +75,8 @@ def c_source(enemies):
 #define ENEMY_GOOMBA 0
 #define ENEMY_GUARD 1
 #define MAX_AMMO 7
-#define SHOT_RANGE 16000.0f
+#define SHOT_RANGE 36000.0f
+#define TEST_FALLBACK_RANGE 90000.0f
 
 struct MashupEnemy {
     float position[3];
@@ -79,6 +86,7 @@ struct MashupEnemy {
     int health;
     float phase;
     int hurtCooldown;
+    int spotTimer;
 };
 
 static struct MashupEnemy gEnemies[] = {
@@ -89,7 +97,12 @@ static int gAmmo = MAX_AMMO;
 static int gReserve = 93;
 static int gPrevFire = 0;
 static int gShotFlash = 0;
+static int gHitFlash = 0;
+static int gLastTarget = -1;
+static int gPrintedHelp = 0;
 static unsigned int gFrame = 0;
+static float gShotStart[3] = {0.0f, 0.0f, 0.0f};
+static float gShotEnd[3] = {0.0f, 0.0f, 0.0f};
 
 static float distance_xz(const float a[3], const float b[3]) {
     float dx = a[0] - b[0];
@@ -104,6 +117,10 @@ static float distance3(const float a[3], const float b[3]) {
     return sqrtf(dx * dx + dy * dy + dz * dz);
 }
 
+static const char *enemy_name(const struct MashupEnemy *enemy) {
+    return enemy->type == ENEMY_GUARD ? "Guard" : "Goomba";
+}
+
 int mario_goldeneye_gameplay_ammo(void) { return gAmmo; }
 int mario_goldeneye_gameplay_reserve(void) { return gReserve; }
 
@@ -115,6 +132,16 @@ int mario_goldeneye_gameplay_enemies_left(void) {
     return count;
 }
 
+static void print_help_once(void) {
+    if (gPrintedHelp) return;
+    gPrintedHelp = 1;
+    printf("--- Mario/GoldenEye gameplay layer ---\n");
+    printf("Move: WASD | Jump: normal Mario controls | Fire PP7 test: F or Right Control\n");
+    printf("Targets loaded: %d enemies. Shots are intentionally forgiving for testing.\n", mario_goldeneye_gameplay_enemies_left());
+    printf("No fake barrel intro and no placeholder buzz gun sound in this build.\n");
+    fflush(stdout);
+}
+
 static void reload_if_needed(void) {
     if (gAmmo > 0 || gReserve <= 0) return;
     int amount = gReserve < MAX_AMMO ? gReserve : MAX_AMMO;
@@ -124,48 +151,86 @@ static void reload_if_needed(void) {
     fflush(stdout);
 }
 
-static int nearest_target(const float marioPosition[3]) {
+static int nearest_target(const float marioPosition[3], float *outDistance) {
     int best = -1;
     float bestScore = SHOT_RANGE;
+    int fallback = -1;
+    float fallbackScore = TEST_FALLBACK_RANGE;
+
     for (unsigned int i = 0; i < sizeof(gEnemies) / sizeof(gEnemies[0]); ++i) {
         if (!gEnemies[i].active) continue;
         float d = distance3(marioPosition, gEnemies[i].position);
         float vertical = fabsf(marioPosition[1] - gEnemies[i].position[1]);
-        if (d < bestScore && vertical < 2500.0f) {
+        if (vertical < 6500.0f && d < bestScore) {
             best = (int)i;
             bestScore = d;
         }
+        if (d < fallbackScore) {
+            fallback = (int)i;
+            fallbackScore = d;
+        }
     }
-    return best;
+
+    if (best >= 0) {
+        if (outDistance) *outDistance = bestScore;
+        return best;
+    }
+    if (fallback >= 0) {
+        if (outDistance) *outDistance = fallbackScore;
+        return fallback;
+    }
+    if (outDistance) *outDistance = 0.0f;
+    return -1;
+}
+
+static void set_shot_line(const float marioPosition[3], const struct MashupEnemy *enemy) {
+    gShotStart[0] = marioPosition[0];
+    gShotStart[1] = marioPosition[1] + 130.0f;
+    gShotStart[2] = marioPosition[2];
+    if (enemy) {
+        gShotEnd[0] = enemy->position[0];
+        gShotEnd[1] = enemy->position[1] + (enemy->type == ENEMY_GUARD ? 90.0f : 35.0f);
+        gShotEnd[2] = enemy->position[2];
+    } else {
+        gShotEnd[0] = marioPosition[0];
+        gShotEnd[1] = marioPosition[1] + 130.0f;
+        gShotEnd[2] = marioPosition[2] + 2200.0f;
+    }
 }
 
 static void fire_pp7(const float marioPosition[3]) {
     reload_if_needed();
     if (gAmmo <= 0) {
-        printf("PP7 empty\n");
+        printf("PP7 empty - no reserve ammo\n");
         fflush(stdout);
         return;
     }
 
     gAmmo--;
-    gShotFlash = 8;
+    gShotFlash = 7;
+    gHitFlash = 0;
+    gLastTarget = -1;
 
-    int target = nearest_target(marioPosition);
+    float distance = 0.0f;
+    int target = nearest_target(marioPosition, &distance);
     if (target >= 0) {
         struct MashupEnemy *enemy = &gEnemies[target];
         enemy->health--;
+        enemy->spotTimer = 90;
+        gHitFlash = 14;
+        gLastTarget = target;
+        set_shot_line(marioPosition, enemy);
         if (enemy->health <= 0) {
             enemy->active = 0;
-            printf("PP7 hit: %s down - enemies left %d - ammo %d / %d\n",
-                   enemy->type == ENEMY_GUARD ? "Guard" : "Goomba",
-                   mario_goldeneye_gameplay_enemies_left(), gAmmo, gReserve);
+            printf("PP7 hit: %s down at %.0f units - enemies left %d | ammo %d/%d\n",
+                   enemy_name(enemy), distance, mario_goldeneye_gameplay_enemies_left(), gAmmo, gReserve);
         } else {
-            printf("PP7 hit: %s hp %d - ammo %d / %d\n",
-                   enemy->type == ENEMY_GUARD ? "Guard" : "Goomba",
-                   enemy->health, gAmmo, gReserve);
+            printf("PP7 hit: %s hp %d at %.0f units | ammo %d/%d\n",
+                   enemy_name(enemy), enemy->health, distance, gAmmo, gReserve);
         }
     } else {
-        printf("PP7 fired: no target - ammo %d / %d\n", gAmmo, gReserve);
+        set_shot_line(marioPosition, 0);
+        printf("PP7 fired: no target | ammo %d/%d\n", gAmmo, gReserve);
     }
     fflush(stdout);
 }
@@ -177,8 +242,10 @@ void mario_goldeneye_gameplay_tick(
     int fireDown
 ) {
     (void)cameraPosition;
+    print_help_once();
     gFrame++;
     if (gShotFlash > 0) gShotFlash--;
+    if (gHitFlash > 0) gHitFlash--;
 
     if (fireDown && !gPrevFire) fire_pp7(marioPosition);
     gPrevFire = fireDown;
@@ -189,19 +256,20 @@ void mario_goldeneye_gameplay_tick(
         enemy->phase += 0.045f + (enemy->type == ENEMY_GUARD ? 0.015f : 0.0f);
         enemy->position[1] = enemy->floorY + (enemy->type == ENEMY_GOOMBA ? 45.0f : 95.0f) + sinf(enemy->phase) * 12.0f;
         if (enemy->hurtCooldown > 0) enemy->hurtCooldown--;
+        if (enemy->spotTimer > 0) enemy->spotTimer--;
 
-        if (sm64_mario_attack(marioId, enemy->position[0], enemy->position[1], enemy->position[2], enemy->type == ENEMY_GUARD ? 170.0f : 90.0f)) {
+        if (sm64_mario_attack(marioId, enemy->position[0], enemy->position[1], enemy->position[2], enemy->type == ENEMY_GUARD ? 190.0f : 110.0f)) {
             enemy->active = 0;
-            printf("Mario defeated %s - enemies left %d\n", enemy->type == ENEMY_GUARD ? "guard" : "goomba", mario_goldeneye_gameplay_enemies_left());
+            printf("Mario defeated %s - enemies left %d\n", enemy_name(enemy), mario_goldeneye_gameplay_enemies_left());
             fflush(stdout);
             continue;
         }
 
         float d = distance_xz(marioPosition, enemy->position);
-        if (d < (enemy->type == ENEMY_GUARD ? 210.0f : 155.0f) && enemy->hurtCooldown == 0) {
+        if (d < (enemy->type == ENEMY_GUARD ? 260.0f : 190.0f) && enemy->hurtCooldown == 0) {
             enemy->hurtCooldown = 65;
             sm64_mario_take_damage(marioId, enemy->type == ENEMY_GUARD ? 2 : 1, 0, enemy->position[0], enemy->position[1], enemy->position[2]);
-            printf("Mario hit by %s\n", enemy->type == ENEMY_GUARD ? "guard" : "goomba");
+            printf("Mario hit by %s\n", enemy_name(enemy));
             fflush(stdout);
         }
     }
@@ -223,25 +291,42 @@ static void draw_billboard(float x, float y, float z, float w, float h) {
     glEnd();
 }
 
+static void draw_enemy_marker(struct MashupEnemy *enemy, int index) {
+    unsigned char flash = (index == gLastTarget && gHitFlash > 0) ? 255 : 0;
+    glPushMatrix();
+    if (enemy->type == ENEMY_GUARD) {
+        glColor4ub(35, 160 + flash / 4, 75, 255);
+        draw_billboard(enemy->position[0], enemy->floorY + 35.0f, enemy->position[2], 150.0f, 260.0f);
+        glColor4ub(230, 200, 130, 255);
+        draw_billboard(enemy->position[0], enemy->floorY + 245.0f, enemy->position[2], 86.0f, 86.0f);
+    } else {
+        glColor4ub(135 + flash / 3, 78, 28, 255);
+        draw_billboard(enemy->position[0], enemy->floorY + 15.0f, enemy->position[2], 150.0f, 112.0f);
+        glColor4ub(255, 255, 255, 255);
+        draw_billboard(enemy->position[0] - 30.0f, enemy->floorY + 86.0f, enemy->position[2], 22.0f, 22.0f);
+        draw_billboard(enemy->position[0] + 30.0f, enemy->floorY + 86.0f, enemy->position[2], 22.0f, 22.0f);
+    }
+    if (enemy->spotTimer > 0 || index == gLastTarget) {
+        glColor4ub(255, 255, 60, 220);
+        draw_billboard(enemy->position[0], enemy->floorY + 315.0f, enemy->position[2], 120.0f, 28.0f);
+    }
+    glPopMatrix();
+}
+
 static void draw_world_enemies(void) {
     glDisable(GL_TEXTURE_2D);
     for (unsigned int i = 0; i < sizeof(gEnemies) / sizeof(gEnemies[0]); ++i) {
-        struct MashupEnemy *enemy = &gEnemies[i];
-        if (!enemy->active) continue;
-        glPushMatrix();
-        if (enemy->type == ENEMY_GUARD) {
-            glColor4ub(30, 135, 70, 255);
-            draw_billboard(enemy->position[0], enemy->floorY + 35.0f, enemy->position[2], 110.0f, 210.0f);
-            glColor4ub(220, 190, 130, 255);
-            draw_billboard(enemy->position[0], enemy->floorY + 205.0f, enemy->position[2], 72.0f, 72.0f);
-        } else {
-            glColor4ub(120, 72, 26, 255);
-            draw_billboard(enemy->position[0], enemy->floorY + 15.0f, enemy->position[2], 120.0f, 92.0f);
-            glColor4ub(255, 255, 255, 255);
-            draw_billboard(enemy->position[0] - 24.0f, enemy->floorY + 70.0f, enemy->position[2], 18.0f, 18.0f);
-            draw_billboard(enemy->position[0] + 24.0f, enemy->floorY + 70.0f, enemy->position[2], 18.0f, 18.0f);
-        }
-        glPopMatrix();
+        if (!gEnemies[i].active) continue;
+        draw_enemy_marker(&gEnemies[i], (int)i);
+    }
+    if (gShotFlash > 0) {
+        glLineWidth(3.0f);
+        glColor4ub(gHitFlash > 0 ? 255 : 200, gHitFlash > 0 ? 240 : 220, 80, 230);
+        glBegin(GL_LINES);
+        glVertex3f(gShotStart[0], gShotStart[1], gShotStart[2]);
+        glVertex3f(gShotEnd[0], gShotEnd[1], gShotEnd[2]);
+        glEnd();
+        glLineWidth(1.0f);
     }
     glEnable(GL_TEXTURE_2D);
 }
@@ -286,15 +371,20 @@ static void draw_gun_hud(void) {
     float w = (float)viewport[2];
     float h = (float)viewport[3];
     glDisable(GL_TEXTURE_2D);
-    draw_rect(w - 172.0f, h - 84.0f, w - 30.0f, h - 28.0f, 0, 0, 0, 150);
-    draw_line_rect(w - 172.0f, h - 84.0f, w - 30.0f, h - 28.0f, 0, 255, 0, 180);
-    draw_rect(w - 150.0f, h - 62.0f, w - 70.0f, h - 49.0f, 70, 70, 70, 255);
-    draw_rect(w - 83.0f, h - 49.0f, w - 55.0f, h - 34.0f, 45, 45, 45, 255);
-    if (gShotFlash > 0) draw_rect(w - 58.0f, h - 66.0f, w - 24.0f, h - 44.0f, 255, 210, 70, 220);
-    glColor4ub(255, 255, 255, 180);
+    draw_rect(w - 190.0f, h - 94.0f, w - 28.0f, h - 22.0f, 0, 0, 0, 165);
+    draw_line_rect(w - 190.0f, h - 94.0f, w - 28.0f, h - 22.0f, 0, 255, 0, 180);
+    draw_rect(w - 164.0f, h - 64.0f, w - 78.0f, h - 48.0f, 70, 70, 70, 255);
+    draw_rect(w - 91.0f, h - 50.0f, w - 56.0f, h - 32.0f, 45, 45, 45, 255);
+    if (gShotFlash > 0) draw_rect(w - 59.0f, h - 70.0f, w - 20.0f, h - 43.0f, 255, 210, 70, 230);
+    for (int i = 0; i < MAX_AMMO; ++i) {
+        float x0 = w - 178.0f + (float)i * 16.0f;
+        if (i < gAmmo) draw_rect(x0, h - 86.0f, x0 + 10.0f, h - 76.0f, 0, 230, 70, 230);
+        else draw_line_rect(x0, h - 86.0f, x0 + 10.0f, h - 76.0f, 0, 110, 35, 180);
+    }
+    glColor4ub(255, 255, 255, gShotFlash > 0 ? 255 : 185);
     glBegin(GL_LINES);
-    glVertex2f(w * 0.5f - 10.0f, h * 0.5f); glVertex2f(w * 0.5f + 10.0f, h * 0.5f);
-    glVertex2f(w * 0.5f, h * 0.5f - 10.0f); glVertex2f(w * 0.5f, h * 0.5f + 10.0f);
+    glVertex2f(w * 0.5f - 14.0f, h * 0.5f); glVertex2f(w * 0.5f + 14.0f, h * 0.5f);
+    glVertex2f(w * 0.5f, h * 0.5f - 14.0f); glVertex2f(w * 0.5f, h * 0.5f + 14.0f);
     glEnd();
     glEnable(GL_TEXTURE_2D);
 }
@@ -406,6 +496,20 @@ def patch_makefile(source: str) -> str:
     return source + suffix + marker + "\n".join(additions) + "\n"
 
 
+def _take_near(candidates, count, reserved=(), min_separation=900.0):
+    selected = []
+    reserved_points = [item["point"] if isinstance(item, dict) else item for item in reserved]
+    for item in sorted(candidates, key=lambda candidate: candidate["spawn_distance"]):
+        if all(_distance(item["point"], point) >= min_separation for point in reserved_points):
+            selected.append(item)
+            reserved_points.append(item["point"])
+            if len(selected) == count:
+                break
+    if len(selected) < count:
+        raise ValueError(f"Only found {len(selected)} of {count} near test enemy placements")
+    return selected
+
+
 def choose_enemies(goldeneye_bytes: bytes, level: str):
     _triangles, _colors, _spawn, _room, transform_data = extract(
         goldeneye_bytes, level, include_transform=True
@@ -415,15 +519,23 @@ def choose_enemies(goldeneye_bytes: bytes, level: str):
     tiles = extract_dam_stan(goldeneye_bytes)
     spawn = dam_mission_start(transform_data["origin"], transform_data["scale"])
     candidates, reachable = safe_candidates(tiles, transform_data["origin"], transform_data["scale"], spawn)
-    usable = [item for item in candidates if item["spawn_distance"] > 1200.0]
-    guards = select_distributed(usable, GUARD_COUNT, (), 1600.0, first="far")
-    goombas = select_distributed(usable, GOOMBA_COUNT, guards, 1200.0, first="near")
+    usable = [item for item in candidates if item["spawn_distance"] > 900.0]
+
+    near = _take_near(usable, NEAR_TEST_TARGETS, (), 1150.0)
+    far_pool = [item for item in usable if item not in near]
+    far_guards = select_distributed(far_pool, GUARD_COUNT - 2, near, 1900.0, first="far")
+    far_goombas = select_distributed(far_pool, GOOMBA_COUNT - 3, near + far_guards, 1400.0, first="near")
+
     enemies = []
-    for item in goombas:
+    for item in near[:3] + far_goombas:
         enemies.append({"point": item["point"], "type": 0, "health": 1, "height_offset": 45.0})
-    for item in guards:
+    for item in near[3:] + far_guards:
         enemies.append({"point": item["point"], "type": 1, "health": 2, "height_offset": 95.0})
-    return enemies, {"safe_candidates": len(candidates), "reachable_stan_tiles": reachable}
+    return enemies, {
+        "safe_candidates": len(candidates),
+        "reachable_stan_tiles": reachable,
+        "near_test_targets": NEAR_TEST_TARGETS,
+    }
 
 
 def install(root: Path, rom: Path, level: str):
@@ -456,13 +568,14 @@ def install(root: Path, rom: Path, level: str):
         "guards": GUARD_COUNT,
         "placement": metadata,
         "controls": {"keyboard_fire": "F or Right Control", "controller_fire": "Right shoulder"},
-        "audio": "placeholder gun sounds disabled; visual flash and terminal feedback active",
+        "audio": "placeholder gun sounds disabled",
         "barrel_overlay": False,
     }
     backup.mkdir(exist_ok=True)
     (backup / "state.json").write_text(json.dumps(state, indent=2) + "\n", encoding="utf-8")
     print(f"Merged gameplay ready: {GOOMBA_COUNT} Mario enemies, {GUARD_COUNT} Bond guards, PP7-style fire control.")
-    print("Fire: F / Right Control / controller right shoulder. Placeholder gun sounds are disabled; watch terminal for PP7 hit/miss feedback.")
+    print(f"Near-spawn test targets: {NEAR_TEST_TARGETS}. Fire: F / Right Control / controller right shoulder.")
+    print("Placeholder gun sounds are disabled; watch the muzzle flash and Terminal hit messages.")
 
 
 if __name__ == "__main__":
