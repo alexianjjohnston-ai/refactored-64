@@ -47,6 +47,17 @@ class CoinFeatureTests(unittest.TestCase):
         once = patch_makefile(source)
         self.assertEqual(patch_makefile(once), once)
         self.assertIn("TEST_OBJS += $(BUILD_DIR)/test/coins.o", once)
+        self.assertIn("$(TEST_FILE): $(BUILD_DIR)/test/coins.o", once)
+
+    def test_makefile_patch_repairs_previous_coin_line(self):
+        source = (
+            "TEST_SRCS_C   := test/context.c test/level.c\n"
+            "# MARIO_GOLDENEYE_COINS_V1\n"
+            "TEST_OBJS += $(BUILD_DIR)/test/coins.o\n"
+        )
+        updated = patch_makefile(source)
+        self.assertEqual(updated.count("TEST_OBJS += $(BUILD_DIR)/test/coins.o"), 1)
+        self.assertEqual(updated.count("$(TEST_FILE): $(BUILD_DIR)/test/coins.o"), 1)
 
 
 if __name__ == "__main__":
