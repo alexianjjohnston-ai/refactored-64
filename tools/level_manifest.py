@@ -13,6 +13,7 @@ from typing import Any
 
 SCHEMA_VERSION = 1
 GAME = "goldeneye"
+WORLD_SCALE = 3.0
 
 
 def facility_manifest(triangles, colors, spawn, spawn_room, level="facility"):
@@ -27,7 +28,7 @@ def facility_manifest(triangles, colors, spawn, spawn_room, level="facility"):
             "rom_stays_local": True,
         },
         "geometry": {
-            "coordinate_scale": 1.0,
+            "coordinate_scale": WORLD_SCALE,
             "triangles": [
                 {
                     "vertices": [list(vertex) for vertex in triangle],
