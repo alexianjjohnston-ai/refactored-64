@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import math
 from pathlib import Path
 import shutil
 
@@ -67,13 +66,10 @@ def c_source(enemies):
 #include "../src/libsm64.h"
 #include "mario_goldeneye_gameplay.h"
 
-#define GE_GUN_SOUND 0x700e8081
-#define GE_HIT_SOUND 0x500c8081
-#define GE_GUARD_DOWN_SOUND 0x7018ff81
 #define ENEMY_GOOMBA 0
 #define ENEMY_GUARD 1
 #define MAX_AMMO 7
-#define SHOT_RANGE 4200.0f
+#define SHOT_RANGE 16000.0f
 
 struct MashupEnemy {
     float position[3];
@@ -135,7 +131,7 @@ static int nearest_target(const float marioPosition[3]) {
         if (!gEnemies[i].active) continue;
         float d = distance3(marioPosition, gEnemies[i].position);
         float vertical = fabsf(marioPosition[1] - gEnemies[i].position[1]);
-        if (d < bestScore && vertical < 900.0f) {
+        if (d < bestScore && vertical < 2500.0f) {
             best = (int)i;
             bestScore = d;
         }
@@ -150,24 +146,26 @@ static void fire_pp7(const float marioPosition[3]) {
         fflush(stdout);
         return;
     }
+
     gAmmo--;
-    gShotFlash = 5;
-    sm64_play_sound(GE_GUN_SOUND, (float *)marioPosition);
+    gShotFlash = 8;
 
     int target = nearest_target(marioPosition);
     if (target >= 0) {
         struct MashupEnemy *enemy = &gEnemies[target];
         enemy->health--;
-        sm64_play_sound(GE_HIT_SOUND, enemy->position);
         if (enemy->health <= 0) {
             enemy->active = 0;
-            sm64_play_sound(GE_GUARD_DOWN_SOUND, enemy->position);
-            printf("%s down - enemies left %d\n", enemy->type == ENEMY_GUARD ? "Guard" : "Goomba", mario_goldeneye_gameplay_enemies_left());
+            printf("PP7 hit: %s down - enemies left %d - ammo %d / %d\n",
+                   enemy->type == ENEMY_GUARD ? "Guard" : "Goomba",
+                   mario_goldeneye_gameplay_enemies_left(), gAmmo, gReserve);
         } else {
-            printf("%s hit - hp %d\n", enemy->type == ENEMY_GUARD ? "Guard" : "Goomba", enemy->health);
+            printf("PP7 hit: %s hp %d - ammo %d / %d\n",
+                   enemy->type == ENEMY_GUARD ? "Guard" : "Goomba",
+                   enemy->health, gAmmo, gReserve);
         }
     } else {
-        printf("PP7 fired - ammo %d / %d\n", gAmmo, gReserve);
+        printf("PP7 fired: no target - ammo %d / %d\n", gAmmo, gReserve);
     }
     fflush(stdout);
 }
@@ -194,7 +192,6 @@ void mario_goldeneye_gameplay_tick(
 
         if (sm64_mario_attack(marioId, enemy->position[0], enemy->position[1], enemy->position[2], enemy->type == ENEMY_GUARD ? 170.0f : 90.0f)) {
             enemy->active = 0;
-            sm64_play_sound(GE_GUARD_DOWN_SOUND, enemy->position);
             printf("Mario defeated %s - enemies left %d\n", enemy->type == ENEMY_GUARD ? "guard" : "goomba", mario_goldeneye_gameplay_enemies_left());
             fflush(stdout);
             continue;
@@ -453,18 +450,19 @@ def install(root: Path, rom: Path, level: str):
     makefile_path.write_text(patch_makefile(makefile_path.read_text(encoding="utf-8")), encoding="utf-8")
 
     state = {
-        "version": 2,
+        "version": 3,
         "level": level,
         "goombas": GOOMBA_COUNT,
         "guards": GUARD_COUNT,
         "placement": metadata,
         "controls": {"keyboard_fire": "F or Right Control", "controller_fire": "Right shoulder"},
+        "audio": "placeholder gun sounds disabled; visual flash and terminal feedback active",
         "barrel_overlay": False,
     }
     backup.mkdir(exist_ok=True)
     (backup / "state.json").write_text(json.dumps(state, indent=2) + "\n", encoding="utf-8")
     print(f"Merged gameplay ready: {GOOMBA_COUNT} Mario enemies, {GUARD_COUNT} Bond guards, PP7-style fire control.")
-    print("Fire: F / Right Control / controller right shoulder. Barrel overlay is disabled for playable default build.")
+    print("Fire: F / Right Control / controller right shoulder. Placeholder gun sounds are disabled; watch terminal for PP7 hit/miss feedback.")
 
 
 if __name__ == "__main__":
