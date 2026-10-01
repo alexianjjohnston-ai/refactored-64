@@ -32,3 +32,12 @@
   generated manifests, and required checkout files.
 - Added Python round-trip and schema validation tests.
 - The manifest/runtime integration and Mac build test are still pending.
+
+## Direction for the next gameplay milestone
+
+- The local setup flow now uses the device's ROM folder and the pinned libsm64
+  revision without placing ROMs in the repository.
+- The game should progress from the opening GoldenEye mission rather than
+  treating the Facility warehouse spawn as the final starting experience.
+- The next game-facing feature is the first mission/level entry flow, including
+  the Mario painting entrance and its short entry jingle before mission play.

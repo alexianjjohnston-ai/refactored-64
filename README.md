@@ -81,6 +81,19 @@ Each step must be tested separately before the next is added.
 
 ## Local level data pipeline
 
+## One-command local setup
+
+From this repository, set up the pinned libsm64 checkout and generate local
+Facility data from ROMs stored on the device:
+
+```bash
+python3 setup_local.py --rom-dir "/Users/alexian/Desktop/N64"
+```
+
+Use `--no-build` to prepare files without compiling. The script validates both
+US ROM hashes, keeps the ROMs outside Git, uses the pinned libsm64 revision,
+and writes generated data under `~/Projects/n64-mashup/generated`.
+
 The first shared data format is a versioned JSON level manifest. It is a
 local build output and must not be committed: it contains geometry generated
 from the user's ROM, while the ROM itself remains untouched.

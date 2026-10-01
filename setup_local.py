@@ -1,0 +1,99 @@
+#!/usr/bin/env python3
+"""Set up the Mario/GoldenEye build from ROMs kept on the local device."""
+from __future__ import annotations
+
+import argparse
+import hashlib
+from pathlib import Path
+import subprocess
+import sys
+
+ROOT = Path(__file__).resolve().parent
+TOOLS = ROOT / "tools"
+LIBSM64_REVISION = "fd11813208272b4271d92bd92feb8f3fdbe61be5"
+MARIO_SHA1 = "9bef1128717f958171a4afac3ed78ee2bb4e86ce"
+GOLDENEYE_SHA1 = "abe01e4aeb033b6c0836819f549c791b26cfde83"
+
+
+def sha1(path: Path) -> str:
+    digest = hashlib.sha1()
+    with path.open("rb") as stream:
+        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def locate(directory: Path, words: tuple[str, ...]) -> Path:
+    candidates = sorted(directory.glob("*.z64"))
+    for candidate in candidates:
+        if all(word.lower() in candidate.name.lower() for word in words):
+            return candidate
+    raise FileNotFoundError(f"Could not find a .z64 ROM containing: {', '.join(words)}")
+
+
+def run(*command: str) -> None:
+    print("+", " ".join(command))
+    subprocess.run(command, cwd=ROOT, check=True)
+
+
+def ensure_libsm64(path: Path, clone_url: str) -> None:
+    if not (path / ".git").is_dir():
+        path.parent.mkdir(parents=True, exist_ok=True)
+        run("git", "clone", clone_url, str(path))
+    run("git", "-C", str(path), "fetch", "--tags", "origin")
+    revision = subprocess.check_output(
+        ("git", "-C", str(path), "rev-parse", "HEAD"), text=True
+    ).strip()
+    if revision != LIBSM64_REVISION:
+        run("git", "-C", str(path), "checkout", LIBSM64_REVISION)
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--rom-dir", type=Path, required=True)
+    parser.add_argument("--libsm64", type=Path, default=Path.home() / "Projects/n64-mashup/libsm64")
+    parser.add_argument("--generated", type=Path, default=Path.home() / "Projects/n64-mashup/generated")
+    parser.add_argument("--clone-url", default="https://github.com/libsm64/libsm64.git")
+    parser.add_argument("--no-build", action="store_true")
+    args = parser.parse_args()
+
+    rom_dir = args.rom_dir.expanduser().resolve()
+    mario = locate(rom_dir, ("mario",))
+    goldeneye = locate(rom_dir, ("goldeneye",))
+    if sha1(mario) != MARIO_SHA1:
+        parser.error(f"Unexpected Mario 64 ROM: {mario}")
+    if sha1(goldeneye) != GOLDENEYE_SHA1:
+        parser.error(f"Unexpected GoldenEye ROM: {goldeneye}")
+    print(f"Using local Mario ROM: {mario}")
+    print(f"Using local GoldenEye ROM: {goldeneye}")
+
+    libsm64 = args.libsm64.expanduser().resolve()
+    ensure_libsm64(libsm64, args.clone_url)
+    target_rom = libsm64 / "baserom.us.z64"
+    if target_rom.exists() and target_rom.resolve() != mario:
+        target_rom.unlink()
+    if not target_rom.exists():
+        target_rom.symlink_to(mario)
+
+    generated = args.generated.expanduser().resolve()
+    generated.mkdir(parents=True, exist_ok=True)
+    run(sys.executable, str(TOOLS / "generate_level_manifest.py"), "--rom", str(goldeneye),
+        "--out", str(generated / "facility.json"))
+    if (libsm64 / "facility-backup").is_dir():
+        print("Facility prototype is already installed; preserving its backup.")
+    else:
+        run(sys.executable, str(TOOLS / "install_facility.py"), "--rom", str(goldeneye),
+            "--libsm64", str(libsm64))
+    if (libsm64 / "camera-backup").is_dir():
+        print("Camera patch is already installed; preserving its backup.")
+    else:
+        run(sys.executable, str(TOOLS / "fix_camera.py"), "--libsm64", str(libsm64))
+
+    if not args.no_build:
+        run("make", "test")
+    print("Local setup complete. ROMs remained on the device and were not copied into this repository.")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
