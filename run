@@ -1,0 +1,9 @@
+#!/bin/sh
+set -eu
+
+ROOT=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+
+echo "Updating refactored-64..."
+git -C "$ROOT" pull --ff-only
+
+exec python3 "$ROOT/setup_local.py" --level dam --run "$@"

@@ -95,6 +95,8 @@ def main() -> int:
     parser.add_argument("--clone-url", default="https://github.com/libsm64/libsm64.git")
     parser.add_argument("--level", choices=("dam", "facility"), default="dam")
     parser.add_argument("--no-build", action="store_true")
+    parser.add_argument("--run", action="store_true",
+                        help="Launch run-test after a successful build")
     args = parser.parse_args()
 
     rom_dir = find_rom_directory(args.rom_dir)
@@ -156,6 +158,10 @@ def main() -> int:
 
     if not args.no_build:
         run("make", "test", cwd=libsm64, env=mac_build_environment())
+        if args.run:
+            run("./run-test", cwd=libsm64, env=mac_build_environment())
+    elif args.run:
+        parser.error("--run cannot be combined with --no-build")
     print("Local setup complete. ROMs remained on the device and were not copied into this repository.")
     return 0
 

@@ -81,14 +81,18 @@ Each step must be tested separately before the next is added.
 
 ## Local level data pipeline
 
-## One-command local setup
+## One-command local setup and run
 
-From this repository, set up the pinned libsm64 checkout and generate local
-Facility data from ROMs stored on the device:
+From this repository, update the project, regenerate the current GoldenEye
+level, refresh the local libsm64 checkout, build, and launch with:
 
 ```bash
-python3 setup_local.py
+./run
 ```
+
+The default target is Dam. The launcher keeps ROMs local, uses the canonical
+4x GoldenEye world scale, refreshes collision and textures, builds `run-test`,
+and starts it. For setup without launching, use `python3 setup_local.py`.
 
 The default target is the first GoldenEye campaign mission, Dam. Use
 `--level facility` only when you specifically want the prototype level.
