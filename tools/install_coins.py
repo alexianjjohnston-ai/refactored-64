@@ -278,13 +278,13 @@ def install(root, rom, level):
     main_path.write_text(patched_main, encoding="utf-8")
     makefile_path.write_text(patched_make, encoding="utf-8")
 
-    state = {{
+    state = {
         "version": 1,
         "level": level,
         "coin_count": len(positions),
         "main_sha256": hashlib.sha256(main_path.read_bytes()).hexdigest(),
         "makefile_sha256": hashlib.sha256(makefile_path.read_bytes()).hexdigest(),
-    }}
+    }
     backup.mkdir(exist_ok=True)
     (backup / "state.json").write_text(json.dumps(state, indent=2) + "\n", encoding="utf-8")
     print(f"Coin feature ready: {len(positions)} collectible coins for {level}.")
