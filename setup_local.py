@@ -8,6 +8,7 @@ import os
 from pathlib import Path
 import subprocess
 import sys
+import json
 
 ROOT = Path(__file__).resolve().parent
 TOOLS = ROOT / "tools"
@@ -121,6 +122,21 @@ def main() -> int:
     generated.mkdir(parents=True, exist_ok=True)
     run(sys.executable, str(TOOLS / "generate_level_manifest.py"), "--rom", str(goldeneye),
         "--level", args.level, "--out", str(generated / f"{args.level}.json"))
+    manifest_path = generated / f"{args.level}.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    if manifest["geometry"].get("coordinate_scale") != 4.0:
+        raise RuntimeError("Generated level is not using the required 4x GoldenEye world scale")
+    coords = [
+        value
+        for triangle in manifest["geometry"]["triangles"]
+        for vertex in triangle["vertices"]
+        for value in vertex
+    ]
+    print(
+        f"Verified GoldenEye world scale: {manifest['geometry']['coordinate_scale']}x "
+        f"(coordinate range {min(coords)}..{max(coords)})"
+    )
+
     run(sys.executable, str(TOOLS / "extract_goldeneye_textures.py"),
         "--rom", str(goldeneye), "--manifest", str(generated / f"{args.level}.json"),
         "--out", str(generated / f"{args.level}-textures"))
@@ -157,6 +173,10 @@ def main() -> int:
     run(*texture_command)
 
     if not args.no_build:
+        # Generated level/header files are not all represented perfectly in the
+        # upstream dependency graph. Remove the app so a stale run-test can never
+        # survive a world-scale refresh.
+        (libsm64 / "run-test").unlink(missing_ok=True)
         run("make", "test", cwd=libsm64, env=mac_build_environment())
         if args.run:
             run("./run-test", cwd=libsm64, env=mac_build_environment())

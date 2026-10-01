@@ -26,8 +26,11 @@ def level_source(triangles) -> str:
 
 def replace_spawn(source: str, spawn: tuple[int, int, int]) -> str:
     args = ",".join(map(str, spawn))
+
+    # Update every sm64_mario_create(x,y,z) in the prototype. This covers both
+    # initial spawn and the fall-reset path without depending on old coordinates.
     source, create_count = re.subn(
-        rf"sm64_mario_create\\(\\s*{NUMBER}\\s*,\\s*{NUMBER}\\s*,\\s*{NUMBER}\\s*\\)",
+        r"sm64_mario_create\(\s*-?\d+(?:\.\d+)?f?\s*,\s*-?\d+(?:\.\d+)?f?\s*,\s*-?\d+(?:\.\d+)?f?\s*\)",
         f"sm64_mario_create({args})",
         source,
     )
@@ -36,7 +39,7 @@ def replace_spawn(source: str, spawn: tuple[int, int, int]) -> str:
 
     for axis, value in enumerate(spawn):
         source, count = re.subn(
-            rf"marioState\\.position\\[{axis}\\]\\s*=\\s*{NUMBER}\\s*;",
+            rf"marioState\.position\[{axis}\]\s*=\s*-?\d+(?:\.\d+)?f?\s*;",
             f"marioState.position[{axis}] = {value};",
             source,
         )
@@ -45,14 +48,13 @@ def replace_spawn(source: str, spawn: tuple[int, int, int]) -> str:
 
     vector = "{" + args + "}"
     source, count = re.subn(
-        rf"float lastPos\\[3\\]\\s*=\\s*\\{{[^}}]+\\}}\\s*,\\s*currPos\\[3\\]\\s*=\\s*\\{{[^}}]+\\}}\\s*;",
+        r"float lastPos\[3\]\s*=\s*\{[^}]+\}\s*,\s*currPos\[3\]\s*=\s*\{[^}]+\}\s*;",
         f"float lastPos[3] = {vector}, currPos[3] = {vector};",
         source,
     )
     if count != 1:
         raise ValueError("Could not uniquely update interpolated Mario spawn")
     return source
-
 
 def refresh_renderer_distance(root: Path, backup: Path) -> None:
     for relative in ("test/gl20/gl20_renderer.c", "test/gl33core/gl33core_renderer.c"):
@@ -89,10 +91,16 @@ def refresh(root: Path, rom: Path, level: str) -> None:
     main_path.write_text(new_main, encoding="utf-8")
     level_path.write_text(new_level, encoding="utf-8")
     refresh_renderer_distance(root, backup)
+    bounds = [
+        (min(p[axis] for tri in triangles for p in tri),
+         max(p[axis] for tri in triangles for p in tri))
+        for axis in range(3)
+    ]
     print(
         f"Refreshed {level} at {GOLDENEYE_WORLD_SCALE:g}x: "
         f"{len(triangles):,} triangles, spawn room {room}, spawn {tuple(spawn)}"
     )
+    print(f"Installed world bounds X={bounds[0]} Y={bounds[1]} Z={bounds[2]}")
     print("Original pre-scale files preserved at", backup)
 
 

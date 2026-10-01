@@ -24,6 +24,22 @@ class ManifestTests(unittest.TestCase):
         self.assertEqual(GOLDENEYE_WORLD_SCALE, 4.0)
         self.assertEqual(self.sample()["geometry"]["coordinate_scale"], 4.0)
 
+    def test_refresh_spawn_replacement(self):
+        from refresh_level import replace_spawn
+        source = """int marioId = sm64_mario_create(1,2,3);
+    marioState.position[0] = 1;
+    marioState.position[1] = 2;
+    marioState.position[2] = 3;
+float lastPos[3] = {1,2,3}, currPos[3] = {1,2,3};
+sm64_mario_create(-4, 5.0f, 6);
+"""
+        updated = replace_spawn(source, (40, 80, -120))
+        self.assertEqual(updated.count("sm64_mario_create(40,80,-120)"), 2)
+        self.assertIn("marioState.position[0] = 40;", updated)
+        self.assertIn("marioState.position[1] = 80;", updated)
+        self.assertIn("marioState.position[2] = -120;", updated)
+        self.assertIn("float lastPos[3] = {40,80,-120}, currPos[3] = {40,80,-120};", updated)
+
     def test_refresh_number_pattern_matches_cpp_numbers(self):
         pattern = re.compile(NUMBER)
         for value in ("0", "-1699", "60", "100.0f", "-23855.5f"):
