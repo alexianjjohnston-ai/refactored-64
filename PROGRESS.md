@@ -22,3 +22,13 @@
 - Keep one feature per commit and wait for the Mac test before adding the next feature.
 - This repository tracks patch source and instructions. It does not upload the user's local libsm64 checkout automatically.
 - Game ROMs and generated game data stay local.
+
+## Data pipeline milestone
+
+- Added a versioned local level-manifest format with geometry, spawn, room,
+  actor, interactable, and mission fields.
+- Added Facility manifest generation from the user's US GoldenEye ROM.
+- Added project validation for the pinned libsm64 revision, ROM presence,
+  generated manifests, and required checkout files.
+- Added Python round-trip and schema validation tests.
+- The manifest/runtime integration and Mac build test are still pending.

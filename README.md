@@ -79,6 +79,37 @@ Validation on Linux: both renderer variants and the updated main loop compile; a
 
 Each step must be tested separately before the next is added.
 
+## Local level data pipeline
+
+The first shared data format is a versioned JSON level manifest. It is a
+local build output and must not be committed: it contains geometry generated
+from the user's ROM, while the ROM itself remains untouched.
+
+Generate and validate the Facility manifest into a local game-data folder:
+
+```bash
+mkdir -p "$HOME/Projects/n64-mashup/generated"
+python3 tools/generate_level_manifest.py \
+  --rom "/path/to/GoldenEye 007 (USA).z64" \
+  --out "$HOME/Projects/n64-mashup/generated/facility.json"
+
+python3 tools/validate_project.py \
+  --goldeneye "/path/to/GoldenEye 007 (USA).z64" \
+  --mario "/path/to/Super Mario 64 (USA).z64" \
+  --libsm64 "$HOME/Projects/n64-mashup/libsm64" \
+  --manifest "$HOME/Projects/n64-mashup/generated/facility.json"
+```
+
+The manifest already has slots for rooms, interactables, actors, and mission
+objectives. They are intentionally empty until each gameplay system is added
+and tested separately.
+
+Run repository-side checks with:
+
+```bash
+python3 -m unittest discover -s tests -p 'test_*.py'
+```
+
 ## References
 
 - [libsm64](https://github.com/libsm64/libsm64), which supplies Mario movement, animation, and rendering data.
