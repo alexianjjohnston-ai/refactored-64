@@ -1,0 +1,22 @@
+# User-supplied game files and locally generated assets
+*.z64
+*.n64
+*.v64
+baserom.*
+assets/
+extracted/
+libsm64/
+
+# Builds and local patch backups
+build/
+dist/
+run-test
+*.dylib
+*.so
+*.dll
+facility-backup/
+camera-backup/
+*.before-mission-menu
+__pycache__/
+*.pyc
+.DS_Store
