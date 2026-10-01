@@ -1,26 +1,41 @@
 #!/usr/bin/env python3
-"""Install the playable merged gameplay layer: gun, guards, Mario enemies."""
+"""Install a playable debug layer using source-derived GoldenEye placement data.
+
+The guard/Goomba drawings are temporary debug stand-ins, but their locations are
+now anchored to real GoldenEye Dam setup pad coordinates from UsetupdamZ.c instead
+of invented random STAN placement.
+"""
 from __future__ import annotations
 
 import argparse
 import json
-import math
 from pathlib import Path
 import shutil
 
 from install_facility import extract
-from install_coins import safe_candidates, select_distributed
-from stan_collision import dam_mission_start, extract_dam_stan
+from stan_collision import dam_mission_start
 
 MARKER = "// MARIO_GOLDENEYE_GAMEPLAY_V1"
 BACKUP = "gameplay-backup"
-GOOMBA_COUNT = 8
-GUARD_COUNT = 8
-NEAR_TEST_TARGETS = 5
+GOOMBA_COUNT = 5
+GUARD_COUNT = 6
 
-
-def _distance(a, b):
-    return math.sqrt(sum((a[i] - b[i]) ** 2 for i in range(3)))
+# Source-derived from n64decomp/007 assets/obseg/setup/UsetupdamZ.c padlist[].
+# These are coordinates/labels only; no ROM assets are shipped in the repository.
+DAM_SETUP_PADS = [
+    {"name": "p6g1", "point": (4719.0, -18.0, 3949.0), "role": "spawn"},
+    {"name": "p16g", "point": (4309.0, -13.0, 3627.0), "role": "guard"},
+    {"name": "p14g", "point": (4262.0, -13.0, 3675.0), "role": "guard"},
+    {"name": "p11g2", "point": (4184.0, -13.0, 3644.0), "role": "guard"},
+    {"name": "p48g2", "point": (4030.0, -13.0, 3913.0), "role": "guard"},
+    {"name": "p1715g2", "point": (4336.0, -13.0, 4138.0), "role": "guard"},
+    {"name": "p2018g2", "point": (4244.0, -13.0, 4075.0), "role": "guard"},
+    {"name": "p1988e", "point": (3807.0, -18.0, 2997.0), "role": "mario_enemy"},
+    {"name": "p1984e", "point": (4288.0, -13.0, 2725.0), "role": "mario_enemy"},
+    {"name": "p1990e", "point": (3655.0, -13.0, 2659.0), "role": "mario_enemy"},
+    {"name": "p1975e", "point": (4164.0, -13.0, 2198.0), "role": "mario_enemy"},
+    {"name": "p2051e", "point": (3675.0, 0.0, 1188.0), "role": "mario_enemy"},
+]
 
 
 def header_source() -> str:
@@ -75,8 +90,7 @@ def c_source(enemies):
 #define ENEMY_GOOMBA 0
 #define ENEMY_GUARD 1
 #define MAX_AMMO 7
-#define SHOT_RANGE 36000.0f
-#define TEST_FALLBACK_RANGE 90000.0f
+#define SHOT_RANGE 24000.0f
 
 struct MashupEnemy {
     float position[3];
@@ -86,7 +100,7 @@ struct MashupEnemy {
     int health;
     float phase;
     int hurtCooldown;
-    int spotTimer;
+    int hitFlash;
 };
 
 static struct MashupEnemy gEnemies[] = {
@@ -97,12 +111,9 @@ static int gAmmo = MAX_AMMO;
 static int gReserve = 93;
 static int gPrevFire = 0;
 static int gShotFlash = 0;
-static int gHitFlash = 0;
-static int gLastTarget = -1;
 static int gPrintedHelp = 0;
+static int gLastTarget = -1;
 static unsigned int gFrame = 0;
-static float gShotStart[3] = {0.0f, 0.0f, 0.0f};
-static float gShotEnd[3] = {0.0f, 0.0f, 0.0f};
 
 static float distance_xz(const float a[3], const float b[3]) {
     float dx = a[0] - b[0];
@@ -135,10 +146,10 @@ int mario_goldeneye_gameplay_enemies_left(void) {
 static void print_help_once(void) {
     if (gPrintedHelp) return;
     gPrintedHelp = 1;
-    printf("--- Mario/GoldenEye gameplay layer ---\n");
-    printf("Move: WASD | Jump: normal Mario controls | Fire PP7 test: F or Right Control\n");
-    printf("Targets loaded: %d enemies. Shots are intentionally forgiving for testing.\n", mario_goldeneye_gameplay_enemies_left());
-    printf("No fake barrel intro and no placeholder buzz gun sound in this build.\n");
+    printf("--- Mario/GoldenEye gameplay debug layer ---\n");
+    printf("Enemy placement source: GoldenEye Dam setup pads. Visuals are temporary stand-ins.\n");
+    printf("Fire PP7 test: F or Right Control. Placeholder gun sounds are disabled.\n");
+    printf("Targets loaded: %d\n", mario_goldeneye_gameplay_enemies_left());
     fflush(stdout);
 }
 
@@ -154,61 +165,28 @@ static void reload_if_needed(void) {
 static int nearest_target(const float marioPosition[3], float *outDistance) {
     int best = -1;
     float bestScore = SHOT_RANGE;
-    int fallback = -1;
-    float fallbackScore = TEST_FALLBACK_RANGE;
-
     for (unsigned int i = 0; i < sizeof(gEnemies) / sizeof(gEnemies[0]); ++i) {
         if (!gEnemies[i].active) continue;
         float d = distance3(marioPosition, gEnemies[i].position);
         float vertical = fabsf(marioPosition[1] - gEnemies[i].position[1]);
-        if (vertical < 6500.0f && d < bestScore) {
+        if (d < bestScore && vertical < 5000.0f) {
             best = (int)i;
             bestScore = d;
         }
-        if (d < fallbackScore) {
-            fallback = (int)i;
-            fallbackScore = d;
-        }
     }
-
-    if (best >= 0) {
-        if (outDistance) *outDistance = bestScore;
-        return best;
-    }
-    if (fallback >= 0) {
-        if (outDistance) *outDistance = fallbackScore;
-        return fallback;
-    }
-    if (outDistance) *outDistance = 0.0f;
-    return -1;
-}
-
-static void set_shot_line(const float marioPosition[3], const struct MashupEnemy *enemy) {
-    gShotStart[0] = marioPosition[0];
-    gShotStart[1] = marioPosition[1] + 130.0f;
-    gShotStart[2] = marioPosition[2];
-    if (enemy) {
-        gShotEnd[0] = enemy->position[0];
-        gShotEnd[1] = enemy->position[1] + (enemy->type == ENEMY_GUARD ? 90.0f : 35.0f);
-        gShotEnd[2] = enemy->position[2];
-    } else {
-        gShotEnd[0] = marioPosition[0];
-        gShotEnd[1] = marioPosition[1] + 130.0f;
-        gShotEnd[2] = marioPosition[2] + 2200.0f;
-    }
+    if (outDistance) *outDistance = bestScore;
+    return best;
 }
 
 static void fire_pp7(const float marioPosition[3]) {
     reload_if_needed();
     if (gAmmo <= 0) {
-        printf("PP7 empty - no reserve ammo\n");
+        printf("PP7 empty\n");
         fflush(stdout);
         return;
     }
-
     gAmmo--;
-    gShotFlash = 7;
-    gHitFlash = 0;
+    gShotFlash = 8;
     gLastTarget = -1;
 
     float distance = 0.0f;
@@ -216,10 +194,8 @@ static void fire_pp7(const float marioPosition[3]) {
     if (target >= 0) {
         struct MashupEnemy *enemy = &gEnemies[target];
         enemy->health--;
-        enemy->spotTimer = 90;
-        gHitFlash = 14;
+        enemy->hitFlash = 22;
         gLastTarget = target;
-        set_shot_line(marioPosition, enemy);
         if (enemy->health <= 0) {
             enemy->active = 0;
             printf("PP7 hit: %s down at %.0f units - enemies left %d | ammo %d/%d\n",
@@ -229,7 +205,6 @@ static void fire_pp7(const float marioPosition[3]) {
                    enemy_name(enemy), enemy->health, distance, gAmmo, gReserve);
         }
     } else {
-        set_shot_line(marioPosition, 0);
         printf("PP7 fired: no target | ammo %d/%d\n", gAmmo, gReserve);
     }
     fflush(stdout);
@@ -245,7 +220,6 @@ void mario_goldeneye_gameplay_tick(
     print_help_once();
     gFrame++;
     if (gShotFlash > 0) gShotFlash--;
-    if (gHitFlash > 0) gHitFlash--;
 
     if (fireDown && !gPrevFire) fire_pp7(marioPosition);
     gPrevFire = fireDown;
@@ -256,7 +230,7 @@ void mario_goldeneye_gameplay_tick(
         enemy->phase += 0.045f + (enemy->type == ENEMY_GUARD ? 0.015f : 0.0f);
         enemy->position[1] = enemy->floorY + (enemy->type == ENEMY_GOOMBA ? 45.0f : 95.0f) + sinf(enemy->phase) * 12.0f;
         if (enemy->hurtCooldown > 0) enemy->hurtCooldown--;
-        if (enemy->spotTimer > 0) enemy->spotTimer--;
+        if (enemy->hitFlash > 0) enemy->hitFlash--;
 
         if (sm64_mario_attack(marioId, enemy->position[0], enemy->position[1], enemy->position[2], enemy->type == ENEMY_GUARD ? 190.0f : 110.0f)) {
             enemy->active = 0;
@@ -291,42 +265,29 @@ static void draw_billboard(float x, float y, float z, float w, float h) {
     glEnd();
 }
 
-static void draw_enemy_marker(struct MashupEnemy *enemy, int index) {
-    unsigned char flash = (index == gLastTarget && gHitFlash > 0) ? 255 : 0;
-    glPushMatrix();
-    if (enemy->type == ENEMY_GUARD) {
-        glColor4ub(35, 160 + flash / 4, 75, 255);
-        draw_billboard(enemy->position[0], enemy->floorY + 35.0f, enemy->position[2], 150.0f, 260.0f);
-        glColor4ub(230, 200, 130, 255);
-        draw_billboard(enemy->position[0], enemy->floorY + 245.0f, enemy->position[2], 86.0f, 86.0f);
-    } else {
-        glColor4ub(135 + flash / 3, 78, 28, 255);
-        draw_billboard(enemy->position[0], enemy->floorY + 15.0f, enemy->position[2], 150.0f, 112.0f);
-        glColor4ub(255, 255, 255, 255);
-        draw_billboard(enemy->position[0] - 30.0f, enemy->floorY + 86.0f, enemy->position[2], 22.0f, 22.0f);
-        draw_billboard(enemy->position[0] + 30.0f, enemy->floorY + 86.0f, enemy->position[2], 22.0f, 22.0f);
-    }
-    if (enemy->spotTimer > 0 || index == gLastTarget) {
-        glColor4ub(255, 255, 60, 220);
-        draw_billboard(enemy->position[0], enemy->floorY + 315.0f, enemy->position[2], 120.0f, 28.0f);
-    }
-    glPopMatrix();
-}
-
 static void draw_world_enemies(void) {
     glDisable(GL_TEXTURE_2D);
     for (unsigned int i = 0; i < sizeof(gEnemies) / sizeof(gEnemies[0]); ++i) {
-        if (!gEnemies[i].active) continue;
-        draw_enemy_marker(&gEnemies[i], (int)i);
-    }
-    if (gShotFlash > 0) {
-        glLineWidth(3.0f);
-        glColor4ub(gHitFlash > 0 ? 255 : 200, gHitFlash > 0 ? 240 : 220, 80, 230);
-        glBegin(GL_LINES);
-        glVertex3f(gShotStart[0], gShotStart[1], gShotStart[2]);
-        glVertex3f(gShotEnd[0], gShotEnd[1], gShotEnd[2]);
-        glEnd();
-        glLineWidth(1.0f);
+        struct MashupEnemy *enemy = &gEnemies[i];
+        if (!enemy->active) continue;
+        glPushMatrix();
+        if (enemy->hitFlash > 0 || (int)i == gLastTarget) {
+            glColor4ub(255, 235, 60, 255);
+            draw_billboard(enemy->position[0], enemy->floorY + 300.0f, enemy->position[2], 130.0f, 32.0f);
+        }
+        if (enemy->type == ENEMY_GUARD) {
+            glColor4ub(30, 145, 70, 255);
+            draw_billboard(enemy->position[0], enemy->floorY + 35.0f, enemy->position[2], 150.0f, 260.0f);
+            glColor4ub(225, 195, 130, 255);
+            draw_billboard(enemy->position[0], enemy->floorY + 245.0f, enemy->position[2], 86.0f, 86.0f);
+        } else {
+            glColor4ub(135, 78, 28, 255);
+            draw_billboard(enemy->position[0], enemy->floorY + 15.0f, enemy->position[2], 150.0f, 112.0f);
+            glColor4ub(255, 255, 255, 255);
+            draw_billboard(enemy->position[0] - 30.0f, enemy->floorY + 86.0f, enemy->position[2], 22.0f, 22.0f);
+            draw_billboard(enemy->position[0] + 30.0f, enemy->floorY + 86.0f, enemy->position[2], 22.0f, 22.0f);
+        }
+        glPopMatrix();
     }
     glEnable(GL_TEXTURE_2D);
 }
@@ -397,13 +358,10 @@ void mario_goldeneye_gameplay_draw_gl20(void) {
     glPushMatrix();
     glLoadIdentity();
     glMatrixMode(GL_MODELVIEW);
-
     draw_world_enemies();
-
     begin_2d();
     draw_gun_hud();
     end_2d();
-
     glMatrixMode(GL_TEXTURE);
     glPopMatrix();
     glPopAttrib();
@@ -415,69 +373,30 @@ void mario_goldeneye_gameplay_draw_gl20(void) {
 def patch_main(source: str) -> str:
     if MARKER in source:
         return source
-
     if '#include "mario_goldeneye_ui.h"' in source:
-        source = source.replace(
-            '#include "mario_goldeneye_ui.h"',
-            '#include "mario_goldeneye_ui.h"\n#include "mario_goldeneye_gameplay.h"\n' + MARKER,
-            1,
-        )
+        source = source.replace('#include "mario_goldeneye_ui.h"', '#include "mario_goldeneye_ui.h"\n#include "mario_goldeneye_gameplay.h"\n' + MARKER, 1)
     else:
-        source = source.replace(
-            '#include "goldeneye_intro.h"',
-            '#include "goldeneye_intro.h"\n#include "mario_goldeneye_gameplay.h"\n' + MARKER,
-            1,
-        )
-
+        source = source.replace('#include "goldeneye_intro.h"', '#include "goldeneye_intro.h"\n#include "mario_goldeneye_gameplay.h"\n' + MARKER, 1)
     if "int gameplayFireDown = 0;" not in source:
-        source = source.replace(
-            "int uiPauseDown = 0, uiLeftDown = 0, uiRightDown = 0;",
-            "int uiPauseDown = 0, uiLeftDown = 0, uiRightDown = 0;\n        int gameplayFireDown = 0;",
-            1,
-        )
+        source = source.replace("int uiPauseDown = 0, uiLeftDown = 0, uiRightDown = 0;", "int uiPauseDown = 0, uiLeftDown = 0, uiRightDown = 0;\n        int gameplayFireDown = 0;", 1)
     if "gameplayFireDown = state[SDL_SCANCODE_F]" not in source:
-        source = source.replace(
-            "uiRightDown = state[SDL_SCANCODE_RIGHTBRACKET];",
-            "uiRightDown = state[SDL_SCANCODE_RIGHTBRACKET];\n            gameplayFireDown = state[SDL_SCANCODE_F] || state[SDL_SCANCODE_RCTRL];",
-            1,
-        )
+        source = source.replace("uiRightDown = state[SDL_SCANCODE_RIGHTBRACKET];", "uiRightDown = state[SDL_SCANCODE_RIGHTBRACKET];\n            gameplayFireDown = state[SDL_SCANCODE_F] || state[SDL_SCANCODE_RCTRL];", 1)
     if "SDL_CONTROLLER_BUTTON_RIGHTSHOULDER" in source and "gameplayFireDown = gameplayFireDown || SDL_GameControllerGetButton(controller, SDL_CONTROLLER_BUTTON_RIGHTSHOULDER);" not in source:
-        source = source.replace(
-            "uiRightDown = SDL_GameControllerGetButton(controller, SDL_CONTROLLER_BUTTON_DPAD_RIGHT);",
-            "uiRightDown = SDL_GameControllerGetButton(controller, SDL_CONTROLLER_BUTTON_DPAD_RIGHT);\n            gameplayFireDown = gameplayFireDown || SDL_GameControllerGetButton(controller, SDL_CONTROLLER_BUTTON_RIGHTSHOULDER);",
-            1,
-        )
-
-    tick_options = [
-        "if (!mario_goldeneye_ui_paused()) mario_goldeneye_coins_tick(marioId, marioState.position);",
-        "mario_goldeneye_coins_tick(marioId, marioState.position);",
-    ]
+        source = source.replace("uiRightDown = SDL_GameControllerGetButton(controller, SDL_CONTROLLER_BUTTON_DPAD_RIGHT);", "uiRightDown = SDL_GameControllerGetButton(controller, SDL_CONTROLLER_BUTTON_DPAD_RIGHT);\n            gameplayFireDown = gameplayFireDown || SDL_GameControllerGetButton(controller, SDL_CONTROLLER_BUTTON_RIGHTSHOULDER);", 1)
+    tick_options = ["if (!mario_goldeneye_ui_paused()) mario_goldeneye_coins_tick(marioId, marioState.position);", "mario_goldeneye_coins_tick(marioId, marioState.position);"]
     for tick in tick_options:
         if tick in source:
-            source = source.replace(
-                tick,
-                tick + "\n            if (!mario_goldeneye_ui_paused()) mario_goldeneye_gameplay_tick(marioId, marioState.position, cameraPos, gameplayFireDown);",
-                1,
-            )
+            source = source.replace(tick, tick + "\n            if (!mario_goldeneye_ui_paused()) mario_goldeneye_gameplay_tick(marioId, marioState.position, cameraPos, gameplayFireDown);", 1)
             break
     else:
         raise ValueError("Could not find coin tick anchor for gameplay")
-
-    draw_options = [
-        "mario_goldeneye_ui_draw_gl20(&marioState);",
-        "mario_goldeneye_coins_draw_gl20();",
-    ]
+    draw_options = ["mario_goldeneye_ui_draw_gl20(&marioState);", "mario_goldeneye_coins_draw_gl20();"]
     for draw in draw_options:
         if draw in source:
-            source = source.replace(
-                draw,
-                draw + "\n        mario_goldeneye_gameplay_draw_gl20();",
-                1,
-            )
+            source = source.replace(draw, draw + "\n        mario_goldeneye_gameplay_draw_gl20();", 1)
             break
     else:
         raise ValueError("Could not find draw anchor for gameplay")
-
     return source
 
 
@@ -485,56 +404,48 @@ def patch_makefile(source: str) -> str:
     object_line = "TEST_OBJS += $(BUILD_DIR)/test/mario_goldeneye_gameplay.o"
     dependency_line = "$(TEST_FILE): $(BUILD_DIR)/test/mario_goldeneye_gameplay.o"
     additions = []
-    if object_line not in source:
-        additions.append(object_line)
-    if dependency_line not in source:
-        additions.append(dependency_line)
-    if not additions:
-        return source
+    if object_line not in source: additions.append(object_line)
+    if dependency_line not in source: additions.append(dependency_line)
+    if not additions: return source
     suffix = "" if source.endswith("\n") else "\n"
     marker = "" if "# MARIO_GOLDENEYE_GAMEPLAY_V1" in source else "\n# MARIO_GOLDENEYE_GAMEPLAY_V1\n"
     return source + suffix + marker + "\n".join(additions) + "\n"
 
 
-def _take_near(candidates, count, reserved=(), min_separation=900.0):
-    selected = []
-    reserved_points = [item["point"] if isinstance(item, dict) else item for item in reserved]
-    for item in sorted(candidates, key=lambda candidate: candidate["spawn_distance"]):
-        if all(_distance(item["point"], point) >= min_separation for point in reserved_points):
-            selected.append(item)
-            reserved_points.append(item["point"])
-            if len(selected) == count:
-                break
-    if len(selected) < count:
-        raise ValueError(f"Only found {len(selected)} of {count} near test enemy placements")
-    return selected
+def _transform_setup_point(point, origin, scale):
+    return tuple(round((point[axis] - origin[axis]) * scale) for axis in range(3))
+
+
+def _enemy_from_pad(pad, origin, scale, kind):
+    point = _transform_setup_point(pad["point"], origin, scale)
+    return {
+        "point": point,
+        "type": 1 if kind == "guard" else 0,
+        "health": 2 if kind == "guard" else 1,
+        "height_offset": 95.0 if kind == "guard" else 45.0,
+        "source_pad": pad["name"],
+    }
 
 
 def choose_enemies(goldeneye_bytes: bytes, level: str):
-    _triangles, _colors, _spawn, _room, transform_data = extract(
-        goldeneye_bytes, level, include_transform=True
-    )
+    _triangles, _colors, _spawn, _room, transform_data = extract(goldeneye_bytes, level, include_transform=True)
     if level != "dam":
         raise ValueError("Gameplay enemy placement currently supports Dam only")
-    tiles = extract_dam_stan(goldeneye_bytes)
-    spawn = dam_mission_start(transform_data["origin"], transform_data["scale"])
-    candidates, reachable = safe_candidates(tiles, transform_data["origin"], transform_data["scale"], spawn)
-    usable = [item for item in candidates if item["spawn_distance"] > 900.0]
-
-    near = _take_near(usable, NEAR_TEST_TARGETS, (), 1150.0)
-    far_pool = [item for item in usable if item not in near]
-    far_guards = select_distributed(far_pool, GUARD_COUNT - 2, near, 1900.0, first="far")
-    far_goombas = select_distributed(far_pool, GOOMBA_COUNT - 3, near + far_guards, 1400.0, first="near")
-
+    origin = transform_data["origin"]
+    scale = transform_data["scale"]
+    spawn = dam_mission_start(origin, scale)
+    guard_pads = [pad for pad in DAM_SETUP_PADS if pad["role"] == "guard"][:GUARD_COUNT]
+    goomba_pads = [pad for pad in DAM_SETUP_PADS if pad["role"] == "mario_enemy"][:GOOMBA_COUNT]
     enemies = []
-    for item in near[:3] + far_goombas:
-        enemies.append({"point": item["point"], "type": 0, "health": 1, "height_offset": 45.0})
-    for item in near[3:] + far_guards:
-        enemies.append({"point": item["point"], "type": 1, "health": 2, "height_offset": 95.0})
+    for pad in goomba_pads:
+        enemies.append(_enemy_from_pad(pad, origin, scale, "goomba"))
+    for pad in guard_pads:
+        enemies.append(_enemy_from_pad(pad, origin, scale, "guard"))
     return enemies, {
-        "safe_candidates": len(candidates),
-        "reachable_stan_tiles": reachable,
-        "near_test_targets": NEAR_TEST_TARGETS,
+        "source": "GoldenEye Dam setup pad records from UsetupdamZ.c",
+        "source_pads": [enemy["source_pad"] for enemy in enemies],
+        "spawn": spawn,
+        "debug_visuals": "Temporary billboards only; placement is source-derived.",
     }
 
 
@@ -543,29 +454,24 @@ def install(root: Path, rom: Path, level: str):
     makefile_path = root / "Makefile"
     if not main_path.is_file() or not makefile_path.is_file():
         raise ValueError("libsm64 prototype checkout was not found")
-
     enemies, metadata = choose_enemies(rom.read_bytes(), level)
-
     backup = root / BACKUP
     main_source = main_path.read_text(encoding="utf-8")
     first_install = MARKER not in main_source
     if first_install:
-        if backup.exists():
-            shutil.rmtree(backup)
+        if backup.exists(): shutil.rmtree(backup)
         backup.mkdir()
         shutil.copy2(main_path, backup / "main.cpp")
         shutil.copy2(makefile_path, backup / "Makefile")
-
     (root / "test/mario_goldeneye_gameplay.h").write_text(header_source(), encoding="utf-8")
     (root / "test/mario_goldeneye_gameplay.c").write_text(c_source(enemies), encoding="utf-8")
     main_path.write_text(patch_main(main_source), encoding="utf-8")
     makefile_path.write_text(patch_makefile(makefile_path.read_text(encoding="utf-8")), encoding="utf-8")
-
     state = {
-        "version": 3,
+        "version": 4,
         "level": level,
-        "goombas": GOOMBA_COUNT,
-        "guards": GUARD_COUNT,
+        "goombas": len([enemy for enemy in enemies if enemy["type"] == 0]),
+        "guards": len([enemy for enemy in enemies if enemy["type"] == 1]),
         "placement": metadata,
         "controls": {"keyboard_fire": "F or Right Control", "controller_fire": "Right shoulder"},
         "audio": "placeholder gun sounds disabled",
@@ -573,9 +479,9 @@ def install(root: Path, rom: Path, level: str):
     }
     backup.mkdir(exist_ok=True)
     (backup / "state.json").write_text(json.dumps(state, indent=2) + "\n", encoding="utf-8")
-    print(f"Merged gameplay ready: {GOOMBA_COUNT} Mario enemies, {GUARD_COUNT} Bond guards, PP7-style fire control.")
-    print(f"Near-spawn test targets: {NEAR_TEST_TARGETS}. Fire: F / Right Control / controller right shoulder.")
-    print("Placeholder gun sounds are disabled; watch the muzzle flash and Terminal hit messages.")
+    print(f"Merged gameplay debug layer ready: {state['goombas']} SM64 debug enemies, {state['guards']} GoldenEye guard debug stand-ins.")
+    print("Enemy placement source: GoldenEye Dam setup pad records (UsetupdamZ.c).")
+    print("Fire: F / Right Control / controller right shoulder. Placeholder gun sounds are disabled.")
 
 
 if __name__ == "__main__":
