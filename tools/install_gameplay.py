@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Install the first merged gameplay layer: gun, guards, Mario enemies, barrel intro."""
+"""Install the first playable merged gameplay layer: gun, guards, Mario enemies."""
 from __future__ import annotations
 
 import argparse
@@ -14,7 +14,6 @@ from stan_collision import dam_mission_start, extract_dam_stan
 
 MARKER = "// MARIO_GOLDENEYE_GAMEPLAY_V1"
 BACKUP = "gameplay-backup"
-
 GOOMBA_COUNT = 5
 GUARD_COUNT = 6
 
@@ -75,7 +74,6 @@ def c_source(enemies):
 #define ENEMY_GUARD 1
 #define MAX_AMMO 7
 #define SHOT_RANGE 4200.0f
-#define SHOT_WIDTH 520.0f
 
 struct MashupEnemy {
     float position[3];
@@ -95,8 +93,6 @@ static int gAmmo = MAX_AMMO;
 static int gReserve = 93;
 static int gPrevFire = 0;
 static int gShotFlash = 0;
-static int gIntroTimer = 0;
-static int gIntroDone = 0;
 static unsigned int gFrame = 0;
 
 static float distance_xz(const float a[3], const float b[3]) {
@@ -184,10 +180,6 @@ void mario_goldeneye_gameplay_tick(
 ) {
     (void)cameraPosition;
     gFrame++;
-    if (!gIntroDone) {
-        gIntroTimer++;
-        if (gIntroTimer > 210 || fireDown) gIntroDone = 1;
-    }
     if (gShotFlash > 0) gShotFlash--;
 
     if (fireDown && !gPrevFire) fire_pp7(marioPosition);
@@ -310,35 +302,6 @@ static void draw_gun_hud(void) {
     glEnable(GL_TEXTURE_2D);
 }
 
-static void draw_barrel_intro(void) {
-    if (gIntroDone) return;
-    GLint viewport[4];
-    glGetIntegerv(GL_VIEWPORT, viewport);
-    float w = (float)viewport[2];
-    float h = (float)viewport[3];
-    float cx = w * 0.5f;
-    float cy = h * 0.5f;
-    float radius = (gIntroTimer < 120) ? (80.0f + (float)gIntroTimer * 2.0f) : 320.0f;
-    glDisable(GL_TEXTURE_2D);
-    draw_rect(0, 0, w, cy - radius * 0.42f, 0, 0, 0, 235);
-    draw_rect(0, cy + radius * 0.42f, w, h, 0, 0, 0, 235);
-    draw_rect(0, cy - radius * 0.42f, cx - radius, cy + radius * 0.42f, 0, 0, 0, 235);
-    draw_rect(cx + radius, cy - radius * 0.42f, w, cy + radius * 0.42f, 0, 0, 0, 235);
-    glColor4ub(255, 255, 255, 180);
-    for (int ring = 0; ring < 5; ++ring) {
-        float r = radius - ring * 18.0f;
-        if (r <= 20.0f) continue;
-        glBegin(GL_LINE_LOOP);
-        for (int i = 0; i < 48; ++i) {
-            float a = (float)i * 6.2831853f / 48.0f;
-            glVertex2f(cx + cosf(a) * r, cy + sinf(a) * r * 0.42f);
-        }
-        glEnd();
-    }
-    if (gIntroTimer > 150 && gIntroTimer < 170) draw_rect(0, 0, w, h, 180, 0, 0, 90);
-    glEnable(GL_TEXTURE_2D);
-}
-
 void mario_goldeneye_gameplay_draw_gl20(void) {
     GLint previousMatrixMode = GL_MODELVIEW;
     glGetIntegerv(GL_MATRIX_MODE, &previousMatrixMode);
@@ -351,7 +314,6 @@ void mario_goldeneye_gameplay_draw_gl20(void) {
     draw_world_enemies();
 
     begin_2d();
-    draw_barrel_intro();
     draw_gun_hud();
     end_2d();
 
@@ -491,19 +453,18 @@ def install(root: Path, rom: Path, level: str):
     makefile_path.write_text(patch_makefile(makefile_path.read_text(encoding="utf-8")), encoding="utf-8")
 
     state = {
-        "version": 1,
+        "version": 2,
         "level": level,
         "goombas": GOOMBA_COUNT,
         "guards": GUARD_COUNT,
         "placement": metadata,
         "controls": {"keyboard_fire": "F or Right Control", "controller_fire": "Right shoulder"},
+        "barrel_overlay": False,
     }
     backup.mkdir(exist_ok=True)
     (backup / "state.json").write_text(json.dumps(state, indent=2) + "\n", encoding="utf-8")
-    print(
-        f"Merged gameplay ready: {GOOMBA_COUNT} Mario enemies, {GUARD_COUNT} Bond guards, PP7-style fire control."
-    )
-    print("Fire: F / Right Control / controller right shoulder. Barrel intro overlay is active at level start.")
+    print(f"Merged gameplay ready: {GOOMBA_COUNT} Mario enemies, {GUARD_COUNT} Bond guards, PP7-style fire control.")
+    print("Fire: F / Right Control / controller right shoulder. Barrel overlay is disabled for playable default build.")
 
 
 if __name__ == "__main__":
