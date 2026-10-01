@@ -231,14 +231,25 @@ def patch_main(source):
 
 def patch_makefile(source):
     # The local prototype's Makefile may already differ from upstream, so do
-    # not depend on the exact TEST_SRCS_C assignment layout. The generic
-    # build/test/%.o rule already knows how to compile test/coins.c; adding the
-    # resulting object to TEST_OBJS is enough to compile and link the feature.
+    # not depend on the exact TEST_SRCS_C assignment layout. TEST_OBJS is used
+    # by the link command, but appending to it after the original run-test rule
+    # is parsed does not retroactively add coins.o as a prerequisite. Add both:
+    # one line for the link command and one later rule that makes run-test wait
+    # for the coin object to be compiled.
     object_line = "TEST_OBJS += $(BUILD_DIR)/test/coins.o"
-    if object_line in source:
+    dependency_line = "$(TEST_FILE): $(BUILD_DIR)/test/coins.o"
+
+    additions = []
+    if object_line not in source:
+        additions.append(object_line)
+    if dependency_line not in source:
+        additions.append(dependency_line)
+    if not additions:
         return source
+
     suffix = "" if source.endswith("\n") else "\n"
-    return source + suffix + "\n# MARIO_GOLDENEYE_COINS_V1\n" + object_line + "\n"
+    marker = "" if "# MARIO_GOLDENEYE_COINS_V1" in source else "\n# MARIO_GOLDENEYE_COINS_V1\n"
+    return source + suffix + marker + "\n".join(additions) + "\n"
 
 
 def install(root, rom, level):
