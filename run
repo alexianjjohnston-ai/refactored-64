@@ -2,18 +2,11 @@
 set -eu
 
 ROOT=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
-LIBSM64="$HOME/Projects/n64-mashup/libsm64"
-LIBSM64_REVISION="fd11813208272b4271d92bd92feb8f3fdbe61be5"
 
 echo "Updating refactored-64..."
 git -C "$ROOT" pull --ff-only
 
-# Start every prototype run from a clean pinned libsm64 checkout. Older UI/front-end
-# patch experiments stayed in the local working tree, so this removes stale generated
-# C before the installers rebuild the current merged shell.
-if [ -d "$LIBSM64/.git" ]; then
-  git -C "$LIBSM64" reset --hard "$LIBSM64_REVISION"
-  git -C "$LIBSM64" clean -fd
-fi
+echo "Starting GoldenEye-base merge path..."
+echo "Legacy Mario/libsm64 sandbox is still available with: sh ./run-libsm64-prototype"
 
-exec python3 "$ROOT/setup_local.py" --level dam --run "$@"
+exec python3 "$ROOT/setup_goldeneye_base.py" --run "$@"
