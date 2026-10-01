@@ -59,15 +59,29 @@ def replace_spawn(source: str, spawn: tuple[int, int, int]) -> str:
     return source
 
 
-def replace_fall_reset(source: str, death_y: int) -> str:
+def replace_fall_reset(source: str, death_y: int, spawn: tuple[int, int, int]) -> str:
+    # Existing check from older installs: update it in place regardless of
+    # whitespace or numeric suffix. Some local prototypes do not contain this
+    # check at all, so fall back to inserting one before the position copy.
     source, count = re.subn(
         r"marioState\.position\[1\]\s*<\s*-?\d+(?:\.\d+)?f?",
         f"marioState.position[1] < {death_y}",
         source,
     )
-    if count != 1:
-        raise ValueError("Could not uniquely update the fall-reset threshold")
-    return source
+    if count:
+        return source
+
+    anchor = "memcpy(currPos, marioState.position, sizeof(currPos));"
+    if source.count(anchor) != 1:
+        raise ValueError("Could not find a unique Mario position-copy anchor for fall reset")
+
+    args = ",".join(map(str, spawn))
+    reset = (
+        f"if (marioState.position[1] < {death_y}) {{ "
+        f"sm64_mario_delete(marioId); marioId = sm64_mario_create({args}); }}\n"
+        "            "
+    )
+    return source.replace(anchor, reset + anchor)
 
 def refresh_renderer_distance(root: Path, backup: Path) -> None:
     for relative in ("test/gl20/gl20_renderer.c", "test/gl33core/gl33core_renderer.c"):
@@ -107,7 +121,7 @@ def refresh(root: Path, rom: Path, level: str) -> None:
 
     new_main = replace_spawn(main_path.read_text(encoding="utf-8"), tuple(spawn))
     if collision is not None:
-        new_main = replace_fall_reset(new_main, collision["death_y"])
+        new_main = replace_fall_reset(new_main, collision["death_y"], tuple(spawn))
     new_level = level_source(collision_triangles, double_sided=double_sided)
 
     backup = root / "world-scale-backup"
