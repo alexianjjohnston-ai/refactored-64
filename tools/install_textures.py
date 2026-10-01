@@ -12,6 +12,15 @@ HEADER='test/ge_textured_level.h'
 def digest(data):
     return hashlib.sha256(data).hexdigest()
 
+def texture_uv(st, state, texture):
+    result=[]
+    for axis,dimension in enumerate((texture['width'],texture['height'])):
+        shift=state['shift'][axis] if state['type']==0 else 0
+        factor=2**(-shift if shift<=10 else 16-shift)
+        offset=0.5 if state['offset']==2 and not texture['explicit_lods'] else 0
+        result.append((st[axis]/32*state['scale'][axis]/65536*factor-offset)/dimension)
+    return result
+
 def generate(manifest, directory):
     textures=json.loads((directory/'decoded.json').read_text())['textures']
     by_id={t['id']:t for t in textures}
@@ -34,13 +43,18 @@ def generate(manifest, directory):
                     'glTexImage2D(GL_TEXTURE_2D,0,GL_RGBA,%d,%d,0,GL_RGBA,GL_UNSIGNED_BYTE,ge_pixels_%d);'%(t['width'],t['height'],t['id'])])
     out.append('}')
     vertices=[]; batches=[]
-    for index,t in enumerate(textures):
-        start=len(vertices)
-        for tri in triangles:
-            if tri['material_id']!=t['id']: continue
-            for xyz,rgb,st in zip(tri['vertices'],tri['colors'],tri['texture_st_s10_5']):
-                vertices.append([*xyz,*rgb,st[0]/(32*t['width']),st[1]/(32*t['height'])])
-        batches.append((index,start,len(vertices)-start))
+    indices={t['id']:i for i,t in enumerate(textures)}
+    for tri in triangles:
+        t=by_id[tri['material_id']]
+        state=tri['texture_state']
+        # Type 0's tile zero always wraps in the original texWriteTileFromDefinition.
+        wrap=(0,0) if state['type']==0 else tuple(state['wrap'])
+        key=(indices[t['id']],wrap)
+        if not batches or batches[-1][0]!=key:
+            batches.append([key,len(vertices),0])
+        for xyz,rgb,st in zip(tri['vertices'],tri['colors'],tri['texture_st_s10_5']):
+            vertices.append([*xyz,*rgb,*texture_uv(st,state,t)])
+            batches[-1][2]+=1
     if any(t['material_id'] not in by_id for t in triangles):
         raise ValueError('Missing decoded materials')
     out.append('static const GLfloat ge_vertices[][8]={')
@@ -50,8 +64,12 @@ def generate(manifest, directory):
                 'glDisable(GL_LIGHTING); glDisable(GL_CULL_FACE); glEnable(GL_TEXTURE_2D);',
                 'glEnable(GL_ALPHA_TEST); glAlphaFunc(GL_GREATER,0.05f);',
                 'glTexEnvi(GL_TEXTURE_ENV,GL_TEXTURE_ENV_MODE,GL_MODULATE);'])
-    for index,start,count in batches:
-        out.append('glBindTexture(GL_TEXTURE_2D,ge_textures[%d]); glBegin(GL_TRIANGLES);'%index)
+    wraps={0:'GL_REPEAT',1:'GL_CLAMP_TO_EDGE',2:'GL_MIRRORED_REPEAT',3:'GL_REPEAT'}
+    for (index,wrap),start,count in batches:
+        out.append('glBindTexture(GL_TEXTURE_2D,ge_textures[%d]);'%index)
+        out.append('glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_WRAP_S,%s);'%wraps[wrap[0]])
+        out.append('glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_WRAP_T,%s);'%wraps[wrap[1]])
+        out.append('glBegin(GL_TRIANGLES);')
         out.append('for(int i=%d;i<%d;++i){ glColor3fv(ge_vertices[i]+3); glTexCoord2fv(ge_vertices[i]+6); glVertex3fv(ge_vertices[i]); }'%(start,start+count))
         out.append('glEnd();')
     out.extend(['glPopAttrib();','}'])

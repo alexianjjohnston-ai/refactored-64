@@ -93,6 +93,7 @@ def main():
             (a.out/(stem+'.rgba')).write_bytes(pixels)
             (a.out/(stem+'.png')).write_bytes(png(w,h,pixels))
             entries.append(dict(id=tid,width=w,height=h,format=fmt,file=stem+'.rgba',
+                                explicit_lods=bool(source.read_bytes()[0]&128),
                                 sha256=hashlib.sha256(pixels).hexdigest()))
         (a.out/'decoded.json').write_text(json.dumps(dict(revision=revision,textures=entries),indent=2)+'\n')
         print(f'Decoded {len(entries)} referenced textures to RGBA8 and PNG: {a.out}')
