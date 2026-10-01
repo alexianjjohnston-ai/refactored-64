@@ -98,6 +98,10 @@ The first shared data format is a versioned JSON level manifest. It is a
 local build output and must not be committed: it contains geometry generated
 from the user's ROM, while the ROM itself remains untouched.
 
+The setup also removes the withdrawn hand-built Facility menu. Its backup is
+kept in the local libsm64 checkout. The original GoldenEye front-end is a
+separate local UI-port milestone and is not replaced by a look-alike menu.
+
 Generate and validate the Facility manifest into a local game-data folder:
 
 ```bash

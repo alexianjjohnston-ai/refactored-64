@@ -41,3 +41,5 @@
   treating the Facility warehouse spawn as the final starting experience.
 - The next game-facing feature is the first mission/level entry flow, including
   the Mario painting entrance and its short entry jingle before mission play.
+- Removed the withdrawn custom Facility menu from the local setup path. The
+  original GoldenEye front-end still needs its renderer/asset port.

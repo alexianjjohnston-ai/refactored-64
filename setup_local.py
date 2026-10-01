@@ -101,6 +101,7 @@ def main() -> int:
         print("Camera patch is already installed; preserving its backup.")
     else:
         run(sys.executable, str(TOOLS / "fix_camera.py"), "--libsm64", str(libsm64))
+    run(sys.executable, str(TOOLS / "remove_custom_menu.py"), "--libsm64", str(libsm64))
 
     if not args.no_build:
         run("make", "test", cwd=libsm64, env=mac_build_environment())
