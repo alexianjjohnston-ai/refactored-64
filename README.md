@@ -47,9 +47,33 @@ make test && ./run-test
 
 Controls: WASD or arrows to move, Space/X to jump, C to punch, Z to crouch, and left/right Shift to rotate the camera.
 
+## Camera update
+
+Close the running game, then run this from the repository folder:
+
+```bash
+python3 tools/fix_camera.py
+```
+
+The patch starts behind Mario, aims 100 units above his feet, increases the orbit distance from 300 to 650 units, and uses a 60 degree field of view. Camera rays pull it closer when walls or ceilings block the view, then ease it outward as the room opens up. Movement keys and existing menus are unchanged.
+
+Rebuild and run using the commands above. Check that Mario and the room are fully visible, WASD still works, and Shift rotation behaves correctly near a wall. This update is awaiting the user's Mac runtime test.
+
+To restore the preceding camera version, run this from the repository folder and rebuild:
+
+```bash
+python3 tools/fix_camera.py --undo
+```
+
+Rollback stops if the patched files were edited afterward, so it cannot silently overwrite a later feature. The patch accepts `--check` to validate without writing and `--libsm64 /path/to/libsm64` for another checkout.
+
+The legacy menu installer's `--undo` restores an older copy of `main.cpp`; do not run that rollback after adding the camera patch or other features. The original game UI will be integrated as its own later change.
+
+Validation on Linux: both renderer variants and the updated main loop compile; an offscreen OpenGL 2 compatibility render shows the Facility room and stairs with Mario fully framed; camera tests cover blocked rays, both triangle windings, wall clearance, and easing. Installer checks cover validation before writes, repeat installation, exact rollback, and protection of later edits. This does not replace the Mac play test.
+
 ## Next steps
 
-1. Correct the camera framing and test it on the Mac.
+1. Test the camera update on the Mac.
 2. Bring in the original GoldenEye mission selection UI.
 3. Add a clear level completion condition and its original game presentation.
 
