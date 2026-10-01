@@ -127,11 +127,16 @@ def main() -> int:
         "--textures", str(generated / f"{args.level}-textures"),
         "--out", str(generated / f"{args.level}-textures/decoded"))
     level_marker = libsm64 / ".mario-goldeneye-level"
-    if args.level == "dam" and (not level_marker.is_file() or level_marker.read_text().strip() != "dam"):
+    installed_level = level_marker.read_text().strip() if level_marker.is_file() else None
+    if installed_level == args.level and (libsm64 / "facility-backup").is_dir():
+        run(sys.executable, str(TOOLS / "refresh_level.py"), "--rom", str(goldeneye),
+            "--level", args.level, "--libsm64", str(libsm64))
+    elif args.level == "dam" and installed_level != "dam":
         run(sys.executable, str(TOOLS / "switch_level.py"), "--rom", str(goldeneye),
             "--level", args.level, "--libsm64", str(libsm64))
     elif (libsm64 / "facility-backup").is_dir():
-        print("Facility prototype is already installed; preserving its backup.")
+        run(sys.executable, str(TOOLS / "refresh_level.py"), "--rom", str(goldeneye),
+            "--level", args.level, "--libsm64", str(libsm64))
     else:
         run(sys.executable, str(TOOLS / "install_facility.py"), "--rom", str(goldeneye),
             "--level", args.level, "--libsm64", str(libsm64))
@@ -140,9 +145,14 @@ def main() -> int:
     else:
         run(sys.executable, str(TOOLS / "fix_camera.py"), "--libsm64", str(libsm64))
     run(sys.executable, str(TOOLS / "remove_custom_menu.py"), "--libsm64", str(libsm64))
-    run(sys.executable, str(TOOLS / "install_textures.py"), "--libsm64", str(libsm64),
+    texture_command = [
+        sys.executable, str(TOOLS / "install_textures.py"), "--libsm64", str(libsm64),
         "--manifest", str(generated / f"{args.level}.json"),
-        "--decoded", str(generated / f"{args.level}-textures/decoded"))
+        "--decoded", str(generated / f"{args.level}-textures/decoded"),
+    ]
+    if (libsm64 / "texture-backup").is_dir():
+        texture_command.append("--update")
+    run(*texture_command)
 
     if not args.no_build:
         run("make", "test", cwd=libsm64, env=mac_build_environment())
