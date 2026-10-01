@@ -46,7 +46,7 @@ class CoinFeatureTests(unittest.TestCase):
         source = "TEST_SRCS_C   := test/context.c test/level.c\n"
         once = patch_makefile(source)
         self.assertEqual(patch_makefile(once), once)
-        self.assertIn("test/coins.c", once)
+        self.assertIn("TEST_OBJS += $(BUILD_DIR)/test/coins.o", once)
 
 
 if __name__ == "__main__":
