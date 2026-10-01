@@ -8,10 +8,10 @@ sys.path.insert(0, str(Path(__file__).parents[1] / "tools"))
 from install_coins import (
     MIN_BOUNDARY_CLEARANCE,
     choose_coin_positions,
-    mio0_decompress,
     patch_main,
     patch_makefile,
 )
+from sm64_assets import mio0_decompress
 
 
 class CoinFeatureTests(unittest.TestCase):

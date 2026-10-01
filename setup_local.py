@@ -120,8 +120,14 @@ def main() -> int:
 
     generated = args.generated.expanduser().resolve()
     generated.mkdir(parents=True, exist_ok=True)
-    run(sys.executable, str(TOOLS / "generate_level_manifest.py"), "--rom", str(goldeneye),
-        "--level", args.level, "--out", str(generated / f"{args.level}.json"))
+    run(
+        sys.executable,
+        str(TOOLS / "prepare_assets.py"),
+        "--goldeneye", str(goldeneye),
+        "--mario", str(mario),
+        "--generated", str(generated),
+        "--level", args.level,
+    )
     manifest_path = generated / f"{args.level}.json"
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     if manifest["geometry"].get("coordinate_scale") != 4.0:
@@ -137,13 +143,6 @@ def main() -> int:
         f"(coordinate range {min(coords)}..{max(coords)})"
     )
 
-    run(sys.executable, str(TOOLS / "extract_goldeneye_textures.py"),
-        "--rom", str(goldeneye), "--manifest", str(generated / f"{args.level}.json"),
-        "--out", str(generated / f"{args.level}-textures"))
-    run(sys.executable, str(TOOLS / "decode_goldeneye_textures.py"),
-        "--rom", str(goldeneye), "--manifest", str(generated / f"{args.level}.json"),
-        "--textures", str(generated / f"{args.level}-textures"),
-        "--out", str(generated / f"{args.level}-textures/decoded"))
     level_marker = libsm64 / ".mario-goldeneye-level"
     installed_level = level_marker.read_text().strip() if level_marker.is_file() else None
     if installed_level == args.level and (libsm64 / "facility-backup").is_dir():
@@ -171,8 +170,13 @@ def main() -> int:
     if (libsm64 / "texture-backup").is_dir():
         texture_command.append("--update")
     run(*texture_command)
-    run(sys.executable, str(TOOLS / "install_coins.py"), "--libsm64", str(libsm64),
-        "--rom", str(goldeneye), "--mario-rom", str(mario), "--level", args.level)
+    run(
+        sys.executable, str(TOOLS / "install_coins.py"),
+        "--libsm64", str(libsm64),
+        "--rom", str(goldeneye),
+        "--coin-assets", str(generated / "sm64"),
+        "--level", args.level,
+    )
 
     if not args.no_build:
         # Generated level/header files are not all represented perfectly in the

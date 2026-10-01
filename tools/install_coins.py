@@ -13,19 +13,13 @@ import json
 import math
 from pathlib import Path
 import shutil
-import struct
 
 from install_facility import extract
 from stan_collision import dam_mission_start, extract_dam_stan, triangulate_polygon
+from sm64_assets import extract_yellow_coin_frames, read_yellow_coin_asset
 
 MARKER = "// MARIO_GOLDENEYE_COINS_V1"
 BACKUP = "coins-backup"
-
-MARIO_SHA1 = "9bef1128717f958171a4afac3ed78ee2bb4e86ce"
-SM64_COMMON1_MIO0_OFFSET = 0x201410
-SM64_COIN_VERTEX_OFFSET = 0x56C0
-SM64_COIN_TEXTURE_OFFSETS = (0x5780, 0x5F80, 0x6780, 0x6F80)
-SM64_COIN_TEXTURE_BYTES = 32 * 32 * 2
 
 COIN_COUNT = 8
 MIN_SEPARATION = 520.0
@@ -132,94 +126,6 @@ def choose_coin_positions(tiles, origin, scale, spawn, count=COIN_COUNT):
         "rooms": sorted(set(entry[2] for entry in selected)),
     }
     return positions, metadata
-
-
-def mio0_decompress(rom, offset):
-    if rom[offset : offset + 4] != b"MIO0":
-        raise ValueError("SM64 common1 MIO0 header is missing")
-    output_size, compressed_offset, raw_offset = struct.unpack_from(
-        ">III", rom, offset + 4
-    )
-    command_position = offset + 16
-    compressed_position = offset + compressed_offset
-    raw_position = offset + raw_offset
-    output = bytearray()
-    command = 0
-    command_bits = 0
-
-    while len(output) < output_size:
-        if command_bits == 0:
-            if command_position >= len(rom):
-                raise ValueError("SM64 MIO0 command stream is truncated")
-            command = rom[command_position]
-            command_position += 1
-            command_bits = 8
-
-        literal = command & 0x80
-        command = (command << 1) & 0xFF
-        command_bits -= 1
-
-        if literal:
-            if raw_position >= len(rom):
-                raise ValueError("SM64 MIO0 raw stream is truncated")
-            output.append(rom[raw_position])
-            raw_position += 1
-            continue
-
-        if compressed_position + 2 > len(rom):
-            raise ValueError("SM64 MIO0 back-reference stream is truncated")
-        first = rom[compressed_position]
-        second = rom[compressed_position + 1]
-        compressed_position += 2
-        length = (first >> 4) + 3
-        distance = (((first & 0x0F) << 8) | second) + 1
-        if distance > len(output):
-            raise ValueError("SM64 MIO0 contains an invalid back-reference")
-        for _ in range(length):
-            output.append(output[-distance])
-            if len(output) == output_size:
-                break
-
-    return bytes(output)
-
-
-def extract_sm64_coin_frames(mario_rom):
-    if hashlib.sha1(mario_rom).hexdigest() != MARIO_SHA1:
-        raise ValueError("Expected the original US Super Mario 64 .z64 ROM")
-
-    common1 = mio0_decompress(mario_rom, SM64_COMMON1_MIO0_OFFSET)
-
-    # This is the first yellow-coin vertex from the US game's segment 3. It
-    # verifies that the decompressed common1 segment is exactly the expected one
-    # before any texture bytes are read.
-    expected_vertex = struct.pack(
-        ">hhhHhhBBBB",
-        -32,
-        0,
-        0,
-        0,
-        0,
-        1984,
-        0xFF,
-        0xFF,
-        0x00,
-        0xFF,
-    )
-    if (
-        common1[
-            SM64_COIN_VERTEX_OFFSET : SM64_COIN_VERTEX_OFFSET + len(expected_vertex)
-        ]
-        != expected_vertex
-    ):
-        raise ValueError("SM64 common1 coin layout did not match the expected US ROM")
-
-    frames = [
-        common1[offset : offset + SM64_COIN_TEXTURE_BYTES]
-        for offset in SM64_COIN_TEXTURE_OFFSETS
-    ]
-    if any(len(frame) != SM64_COIN_TEXTURE_BYTES for frame in frames):
-        raise ValueError("SM64 yellow-coin texture data is truncated")
-    return frames
 
 
 def _c_byte_array(data):
@@ -482,15 +388,19 @@ def patch_makefile(source):
     return source + suffix + marker + "\n".join(additions) + "\n"
 
 
-def install(root, goldeneye_rom, mario_rom, level):
+def install(root, goldeneye_rom, mario_rom, coin_assets, level):
     main_path = root / "test/main.cpp"
     makefile_path = root / "Makefile"
     if not main_path.is_file() or not makefile_path.is_file():
         raise ValueError("libsm64 prototype checkout was not found")
 
     goldeneye_bytes = goldeneye_rom.read_bytes()
-    mario_bytes = mario_rom.read_bytes()
-    frames = extract_sm64_coin_frames(mario_bytes)
+    if coin_assets is not None:
+        frames = read_yellow_coin_asset(coin_assets)
+    elif mario_rom is not None:
+        frames = extract_yellow_coin_frames(mario_rom.read_bytes())
+    else:
+        raise ValueError("Provide --coin-assets or --mario-rom for SM64 coin textures")
 
     _triangles, _colors, spawn, _room, transform_data = extract(
         goldeneye_bytes, level, include_transform=True
@@ -581,14 +491,19 @@ if __name__ == "__main__":
     parser.add_argument(
         "--mario-rom",
         type=Path,
-        required=True,
-        help="US Super Mario 64 ROM used to extract original coin textures",
+        help="US Super Mario 64 ROM fallback used to extract original coin textures",
+    )
+    parser.add_argument(
+        "--coin-assets",
+        type=Path,
+        help="Prepared SM64 asset root containing yellow-coin/frame-*.ia16",
     )
     parser.add_argument("--level", choices=("dam", "facility"), default="dam")
     args = parser.parse_args()
     install(
         args.libsm64.expanduser().resolve(),
         args.rom.expanduser().resolve(),
-        args.mario_rom.expanduser().resolve(),
+        args.mario_rom.expanduser().resolve() if args.mario_rom else None,
+        args.coin_assets.expanduser().resolve() if args.coin_assets else None,
         args.level,
     )

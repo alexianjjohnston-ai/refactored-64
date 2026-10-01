@@ -65,6 +65,7 @@ def main():
     ids=sorted({t['material_id'] for t in manifest['geometry']['triangles']})
     reference=(a.reference or a.out.parent/'.goldeneye-pc-port').resolve()
     if not reference.exists():
+        reference.parent.mkdir(parents=True,exist_ok=True)
         subprocess.run(['git','clone',REFERENCE_URL,str(reference)],check=True)
         subprocess.run(['git','-C',str(reference),'checkout','--detach',REVISION],check=True)
     revision=subprocess.check_output(['git','-C',str(reference),'rev-parse','HEAD'],text=True).strip()

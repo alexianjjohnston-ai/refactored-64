@@ -112,6 +112,33 @@ The first shared data format is a versioned JSON level manifest. It is a
 local build output and must not be committed: it contains geometry generated
 from the user's ROM, while the ROM itself remains untouched.
 
+### Local asset preparation and cache
+
+`./run` now prepares reusable ROM-derived assets through
+`tools/prepare_assets.py`. Generated data stays under
+`~/Projects/n64-mashup/generated` and is fingerprinted by the ROM hashes,
+relevant extractor code, manifests, and pinned reference revision. Unchanged
+GoldenEye textures and shared SM64 assets are reused instead of being decoded
+again on every build.
+
+The preparation step also writes `generated/asset-index.json` and a shared
+`generated/sm64/` root. Feature installers should consume assets from that
+root rather than each implementing their own ROM parser. The first shared
+asset is the original four-frame SM64 yellow coin. Stars, HUD glyphs, menu
+graphics, particles, and other common assets can be registered in
+`tools/sm64_assets.py` as they are added.
+
+To pre-warm both supported GoldenEye levels without patching or building
+libsm64:
+
+```bash
+python3 tools/prepare_assets.py \
+  --goldeneye "$HOME/Downloads/GoldenEye 007 (USA).z64" \
+  --mario "$HOME/Downloads/Super Mario 64 (USA).z64" \
+  --generated "$HOME/Projects/n64-mashup/generated" \
+  --level dam --level facility
+```
+
 The setup also removes the withdrawn hand-built Facility menu. Its backup is
 kept in the local libsm64 checkout. The original GoldenEye front-end is a
 separate local UI-port milestone and is not replaced by a look-alike menu.
