@@ -189,6 +189,8 @@ def update(root, undo=False, check=False):
         else:
             old_projection = 'glm_perspective( 45.0f,'
         renderer = replace_once(renderer, old_projection, 'glm_perspective( 1.047197551f,', name)
+        renderer = renderer.replace('10.0f, 30000.0f', '10.0f, 100000.0f')
+        renderer = renderer.replace('100.0f, 20000.0f', '10.0f, 100000.0f')
         # Remove a read of an uninitialized matrix, overwritten immediately by lookat.
         renderer = replace_once(renderer, '\tglm_translate( view, (float*)camPos );\n', '', name)
         sources[name] = renderer

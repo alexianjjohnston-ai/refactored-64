@@ -134,8 +134,9 @@ def extract(rom, level='facility', include_materials=False):
     scale = GOLDENEYE_WORLD_SCALE
     spawn=tuple(round((spawn[k]-origin[k])*scale) for k in range(3))
     tris=[[[round((p[k]-origin[k])*scale) for k in range(3)] for p in t] for t in tris]
-    if max(abs(p[k]) for t in tris for p in t for k in (0,2))>30000:
-        raise ValueError(f'{level.title()} exceeds the supported collision bounds')
+    max_coordinate = max(abs(p[k]) for t in tris for p in t for k in range(3))
+    if max_coordinate > 1000000:
+        raise ValueError(f'{level.title()} produced unreasonable world coordinates: {max_coordinate}')
     if include_materials:
         return tris, colors, spawn, rid, material_ids, texture_coords, texture_states
     return tris,colors,spawn,rid
@@ -177,7 +178,7 @@ def install(root,rom,level='facility'):
     main=main.replace('memcpy(currPos, marioState.position, sizeof(currPos));','if (marioState.position[1] < -15000) { sm64_mario_delete(marioId); marioId = sm64_mario_create('+spawn_args+'); }\n            memcpy(currPos, marioState.position, sizeof(currPos));')
     (root/'test/main.cpp').write_text(main)
     gl=(root/'test/gl20/gl20_renderer.c').read_text()
-    gl=gl.replace('glm_perspective( 45.0f,','glm_perspective( 0.785398f,').replace('100.0f, 20000.0f','10.0f, 30000.0f')
+    gl=gl.replace('glm_perspective( 45.0f,','glm_perspective( 0.785398f,').replace('100.0f, 20000.0f','10.0f, 100000.0f')
     gl=gl.replace('glEnable( GL_CULL_FACE );','glDisable( GL_CULL_FACE );')
     gl=gl.replace('glDrawElements(GL_TRIANGLES, renderState->collision.num_vertices, GL_UNSIGNED_SHORT, renderState->collision.index);','glDisable(GL_TEXTURE_2D);\n\tglDrawArrays(GL_TRIANGLES, 0, renderState->collision.num_vertices);\n\tglEnable(GL_TEXTURE_2D);')
     # Initialize every UV, including the last triangle for odd surface counts.

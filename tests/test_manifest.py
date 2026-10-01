@@ -1,4 +1,5 @@
 import json
+import re
 import sys
 import tempfile
 import unittest
@@ -7,6 +8,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parents[1] / "tools"))
 from level_manifest import facility_manifest, read_manifest, validate_manifest, write_manifest
 from project_constants import GOLDENEYE_WORLD_SCALE
+from refresh_level import NUMBER
 
 
 class ManifestTests(unittest.TestCase):
@@ -21,6 +23,11 @@ class ManifestTests(unittest.TestCase):
     def test_goldeneye_world_scale(self):
         self.assertEqual(GOLDENEYE_WORLD_SCALE, 4.0)
         self.assertEqual(self.sample()["geometry"]["coordinate_scale"], 4.0)
+
+    def test_refresh_number_pattern_matches_cpp_numbers(self):
+        pattern = re.compile(NUMBER)
+        for value in ("0", "-1699", "60", "100.0f", "-23855.5f"):
+            self.assertEqual(pattern.fullmatch(value).group(0), value)
 
     def test_round_trip(self):
         manifest = self.sample()

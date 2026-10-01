@@ -11,7 +11,7 @@ from install_facility import extract
 from project_constants import GOLDENEYE_WORLD_SCALE
 
 
-NUMBER = r"-?\\d+(?:\\.\\d+)?f?"
+NUMBER = r"-?\d+(?:\.\d+)?f?"
 
 
 def level_source(triangles) -> str:
@@ -54,6 +54,22 @@ def replace_spawn(source: str, spawn: tuple[int, int, int]) -> str:
     return source
 
 
+def refresh_renderer_distance(root: Path, backup: Path) -> None:
+    for relative in ("test/gl20/gl20_renderer.c", "test/gl33core/gl33core_renderer.c"):
+        path = root / relative
+        if not path.is_file():
+            continue
+        source = path.read_text(encoding="utf-8")
+        updated = source.replace("10.0f, 30000.0f", "10.0f, 100000.0f")
+        updated = updated.replace("100.0f, 20000.0f", "10.0f, 100000.0f")
+        if updated == source:
+            continue
+        saved = backup / Path(relative).name
+        if not saved.exists():
+            shutil.copy2(path, saved)
+        path.write_text(updated, encoding="utf-8")
+
+
 def refresh(root: Path, rom: Path, level: str) -> None:
     main_path = root / "test/main.cpp"
     level_path = root / "test/level.c"
@@ -72,6 +88,7 @@ def refresh(root: Path, rom: Path, level: str) -> None:
 
     main_path.write_text(new_main, encoding="utf-8")
     level_path.write_text(new_level, encoding="utf-8")
+    refresh_renderer_distance(root, backup)
     print(
         f"Refreshed {level} at {GOLDENEYE_WORLD_SCALE:g}x: "
         f"{len(triangles):,} triangles, spawn room {room}, spawn {tuple(spawn)}"
