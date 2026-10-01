@@ -31,9 +31,9 @@ def locate(directory: Path, words: tuple[str, ...]) -> Path:
     raise FileNotFoundError(f"Could not find a .z64 ROM containing: {', '.join(words)}")
 
 
-def run(*command: str) -> None:
+def run(*command: str, cwd: Path = ROOT) -> None:
     print("+", " ".join(command))
-    subprocess.run(command, cwd=ROOT, check=True)
+    subprocess.run(command, cwd=cwd, check=True)
 
 
 def ensure_libsm64(path: Path, clone_url: str) -> None:
@@ -90,7 +90,7 @@ def main() -> int:
         run(sys.executable, str(TOOLS / "fix_camera.py"), "--libsm64", str(libsm64))
 
     if not args.no_build:
-        run("make", "test")
+        run("make", "test", cwd=libsm64)
     print("Local setup complete. ROMs remained on the device and were not copied into this repository.")
     return 0
 
