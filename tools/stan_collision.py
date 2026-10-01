@@ -128,6 +128,11 @@ def parse_stan(blob):
                 "room": room,
                 "special": (mid >> 12) & 0xF,
                 "points": points,
+                # STAN point links are byte offsets in units of 8 from a
+                # virtual base 0x80 bytes before ptr_firstroom. Keeping these
+                # offsets lets later systems reproduce GoldenEye reachability.
+                "offset": offset,
+                "link_base": first_tile - 0x80,
             }
         )
         offset = end

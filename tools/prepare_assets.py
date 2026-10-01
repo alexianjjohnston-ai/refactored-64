@@ -4,7 +4,7 @@ from __future__ import annotations
 import argparse,json,subprocess,sys
 from pathlib import Path
 from asset_cache import AssetCache,fingerprint,sha1_file,sha256_file
-from sm64_assets import ASSET_CATALOG,MARIO_SHA1,write_yellow_coin_asset
+from sm64_assets import ASSET_CATALOG,MARIO_SHA1,write_power_star_asset,write_yellow_coin_asset
 
 TOOLS=Path(__file__).resolve().parent
 GOLDENEYE_SHA1="abe01e4aeb033b6c0836819f549c791b26cfde83"
@@ -25,12 +25,20 @@ def cached_run(cache,key,fp,outputs,command):
 def prepare_sm64(cache,mario,generated):
     root=generated/"sm64"
     outputs=[root/"yellow-coin"/f"frame-{i}.ia16" for i in range(4)]
+    outputs += [
+        root/"power-star"/"surface.rgba8",
+        root/"power-star"/"eyes.rgba8",
+        root/"power-star"/"body.vtx",
+        root/"power-star"/"eyes.vtx",
+    ]
     fp=fingerprint("sm64-shared-v1",sha1_file(mario),json.dumps(ASSET_CATALOG,sort_keys=True),
                    files=(TOOLS/"sm64_assets.py",))
     if cache.is_fresh("sm64.shared",fp,outputs):
         print("Using cached assets: sm64.shared")
     else:
-        write_yellow_coin_asset(mario.read_bytes(),root)
+        rom=mario.read_bytes()
+        write_yellow_coin_asset(rom,root)
+        write_power_star_asset(rom,root)
         cache.mark("sm64.shared",fp,outputs)
         print("Prepared shared SM64 assets:",root)
     return {"root":str(root),"catalog":ASSET_CATALOG}

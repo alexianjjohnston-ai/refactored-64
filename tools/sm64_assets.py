@@ -71,3 +71,84 @@ ASSET_CATALOG={
         "dimensions":[32,32],"frames":4,"prepared_subdir":YELLOW_COIN_ASSET_NAME,
     }
 }
+
+
+POWER_STAR_ASSET_NAME="power-star"
+POWER_STAR_SURFACE_OFFSET=0x2A6F0
+POWER_STAR_EYE_OFFSET=0x2AEF0
+POWER_STAR_BODY_VERTEX_OFFSET=0x2B6F0
+POWER_STAR_EYE_VERTEX_OFFSET=0x2B920
+POWER_STAR_TEXTURE_BYTES=32*32*2
+POWER_STAR_BODY_VERTEX_BYTES=12*16
+POWER_STAR_EYE_VERTEX_BYTES=10*16
+
+def rgba16_to_rgba8(data:bytes)->bytes:
+    if len(data)%2: raise ValueError("RGBA16 byte count must be even")
+    out=bytearray()
+    for i in range(0,len(data),2):
+        value=(data[i]<<8)|data[i+1]
+        out.extend((
+            ((value>>11)&31)*255//31,
+            ((value>>6)&31)*255//31,
+            ((value>>1)&31)*255//31,
+            255 if value&1 else 0,
+        ))
+    return bytes(out)
+
+def extract_power_star_asset(rom:bytes):
+    common1=common1_segment(rom)
+    expected=struct.pack(">hhhHhhBBBB",0,8,-89,0,0,0,0x00,0x07,0x82,0xff)
+    actual=common1[POWER_STAR_BODY_VERTEX_OFFSET:POWER_STAR_BODY_VERTEX_OFFSET+len(expected)]
+    if actual!=expected: raise ValueError("SM64 common1 Power Star layout mismatch")
+    surface=common1[POWER_STAR_SURFACE_OFFSET:POWER_STAR_SURFACE_OFFSET+POWER_STAR_TEXTURE_BYTES]
+    eyes=common1[POWER_STAR_EYE_OFFSET:POWER_STAR_EYE_OFFSET+POWER_STAR_TEXTURE_BYTES]
+    body=common1[POWER_STAR_BODY_VERTEX_OFFSET:POWER_STAR_BODY_VERTEX_OFFSET+POWER_STAR_BODY_VERTEX_BYTES]
+    eyev=common1[POWER_STAR_EYE_VERTEX_OFFSET:POWER_STAR_EYE_VERTEX_OFFSET+POWER_STAR_EYE_VERTEX_BYTES]
+    if len(surface)!=POWER_STAR_TEXTURE_BYTES or len(eyes)!=POWER_STAR_TEXTURE_BYTES:
+        raise ValueError("SM64 Power Star texture data is truncated")
+    if len(body)!=POWER_STAR_BODY_VERTEX_BYTES or len(eyev)!=POWER_STAR_EYE_VERTEX_BYTES:
+        raise ValueError("SM64 Power Star vertex data is truncated")
+    return {
+        "surface_rgba8":rgba16_to_rgba8(surface),
+        "eyes_rgba8":rgba16_to_rgba8(eyes),
+        "body_vertices":body,
+        "eye_vertices":eyev,
+    }
+
+def write_power_star_asset(rom:bytes,root:Path):
+    directory=Path(root).expanduser().resolve()/POWER_STAR_ASSET_NAME
+    directory.mkdir(parents=True,exist_ok=True)
+    asset=extract_power_star_asset(rom)
+    paths=[]
+    for name,data in (
+        ("surface.rgba8",asset["surface_rgba8"]),
+        ("eyes.rgba8",asset["eyes_rgba8"]),
+        ("body.vtx",asset["body_vertices"]),
+        ("eyes.vtx",asset["eye_vertices"]),
+    ):
+        path=directory/name; path.write_bytes(data); paths.append(path)
+    return paths
+
+def read_power_star_asset(root:Path):
+    directory=Path(root).expanduser().resolve()/POWER_STAR_ASSET_NAME
+    names=("surface.rgba8","eyes.rgba8","body.vtx","eyes.vtx")
+    paths=[directory/name for name in names]
+    if not all(p.is_file() for p in paths):
+        raise FileNotFoundError(f"Missing prepared Power Star asset under {directory}")
+    asset={
+        "surface_rgba8":paths[0].read_bytes(),
+        "eyes_rgba8":paths[1].read_bytes(),
+        "body_vertices":paths[2].read_bytes(),
+        "eye_vertices":paths[3].read_bytes(),
+    }
+    if len(asset["surface_rgba8"])!=32*32*4 or len(asset["eyes_rgba8"])!=32*32*4:
+        raise ValueError("Prepared Power Star texture has wrong size")
+    if len(asset["body_vertices"])!=POWER_STAR_BODY_VERTEX_BYTES or len(asset["eye_vertices"])!=POWER_STAR_EYE_VERTEX_BYTES:
+        raise ValueError("Prepared Power Star vertex data has wrong size")
+    return asset
+
+ASSET_CATALOG["power_star"]={
+    "game":"sm64","segment":"common1","format":"original model + RGBA16 textures",
+    "surface_dimensions":[32,32],"eye_dimensions":[32,32],
+    "prepared_subdir":POWER_STAR_ASSET_NAME,
+}
