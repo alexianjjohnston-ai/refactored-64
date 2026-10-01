@@ -171,6 +171,8 @@ def main() -> int:
     if (libsm64 / "texture-backup").is_dir():
         texture_command.append("--update")
     run(*texture_command)
+    run(sys.executable, str(TOOLS / "install_coins.py"), "--libsm64", str(libsm64),
+        "--rom", str(goldeneye), "--level", args.level)
 
     if not args.no_build:
         # Generated level/header files are not all represented perfectly in the
