@@ -230,15 +230,15 @@ def patch_main(source):
 
 
 def patch_makefile(source):
-    if "test/coins.c" in source:
+    # The local prototype's Makefile may already differ from upstream, so do
+    # not depend on the exact TEST_SRCS_C assignment layout. The generic
+    # build/test/%.o rule already knows how to compile test/coins.c; adding the
+    # resulting object to TEST_OBJS is enough to compile and link the feature.
+    object_line = "TEST_OBJS += $(BUILD_DIR)/test/coins.o"
+    if object_line in source:
         return source
-    lines = source.splitlines()
-    matches = [index for index, line in enumerate(lines) if line.startswith("TEST_SRCS_C")]
-    if len(matches) != 1:
-        raise ValueError("Could not find unique TEST_SRCS_C Makefile line")
-    index = matches[0]
-    lines[index] += " test/coins.c"
-    return "\n".join(lines) + ("\n" if source.endswith("\n") else "")
+    suffix = "" if source.endswith("\n") else "\n"
+    return source + suffix + "\n# MARIO_GOLDENEYE_COINS_V1\n" + object_line + "\n"
 
 
 def install(root, rom, level):
