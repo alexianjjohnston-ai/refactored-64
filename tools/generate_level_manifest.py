@@ -28,9 +28,12 @@ def main() -> int:
     digest = hashlib.sha1(rom.read_bytes()).hexdigest()
     if digest != EXPECTED_SHA1:
         parser.error("Expected the original US GoldenEye .z64 ROM.")
-    triangles, colors, spawn, room, materials = extract(rom.read_bytes(), args.level, include_materials=True)
+    triangles, colors, spawn, room, materials, texture_coords = extract(rom.read_bytes(), args.level, include_materials=True)
     destination = args.out.expanduser().resolve()
-    write_manifest(facility_manifest(triangles, colors, spawn, room, args.level, materials), destination)
+    manifest = facility_manifest(triangles, colors, spawn, room, args.level, materials)
+    for triangle, st in zip(manifest['geometry']['triangles'], texture_coords):
+        triangle['texture_st_s10_5'] = st
+    write_manifest(manifest, destination)
     atlas = destination.with_name(destination.stem + "-materials.ppm")
     import subprocess
     subprocess.run([sys.executable, str(TOOLS / "texture_converter.py"),

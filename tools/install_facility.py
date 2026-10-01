@@ -36,7 +36,7 @@ def extract(rom, level='facility', include_materials=False):
             break
         if len(rooms) > 256:
             raise ValueError('Invalid room table')
-    tris, colors, room_ids, material_ids = [], [], [], []
+    tris, colors, room_ids, material_ids, texture_coords = [], [], [], [], []
     def inflate(address):
         offset = address & 0xffffff
         if data[offset:offset+2] != b'\x11\x72':
@@ -58,7 +58,7 @@ def extract(rom, level='facility', include_materials=False):
                 # GoldenEye's background display lists use G_NOOP as a
                 # texture-number marker; the game resolves it through the
                 # global image table before rendering the room.
-                if op == 0:
+                if op == 0xc0:  # G_NOOP; GoldenEye stores texture number in w1
                     current_material = w1 & 0xfff
                 if op == 4:
                     n, start = ((w0 >> 20)&15)+1, (w0 >> 16)&15
@@ -68,7 +68,8 @@ def extract(rom, level='facility', include_materials=False):
                     for j in range(n):
                         xyz = struct.unpack_from('>hhh', verts, vo+j*16)
                         rgb = verts[vo+j*16+12:vo+j*16+15]
-                        cache[start+j] = (tuple(xyz[k]+row[k+3] for k in range(3)),tuple(v/255 for v in rgb))
+                        st = struct.unpack_from('>hh', verts, vo+j*16+8)
+                        cache[start+j] = (tuple(xyz[k]+row[k+3] for k in range(3)),tuple(v/255 for v in rgb),st)
                 indices = []
                 if op == 0xbf:
                     indices = [tuple(((w1 >> s)&255)//10 for s in (16,8,0))]
@@ -87,6 +88,7 @@ def extract(rom, level='facility', include_materials=False):
                         continue
                     tris.append(pts);colors.append([cache[i][1] for i in ix]);room_ids.append(room_id)
                     material_ids.append(current_material)
+                    texture_coords.append([list(cache[i][2]) for i in ix])
     if len(tris) < 1000:
         raise ValueError('Too few Facility triangles')
     # Choose a large horizontal interior floor with overhead clearance.
@@ -130,7 +132,7 @@ def extract(rom, level='facility', include_materials=False):
     if max(abs(p[k]) for t in tris for p in t for k in (0,2))>30000:
         raise ValueError(f'{level.title()} exceeds the supported collision bounds')
     if include_materials:
-        return tris, colors, spawn, rid, material_ids
+        return tris, colors, spawn, rid, material_ids, texture_coords
     return tris,colors,spawn,rid
 
 def install(root,rom,level='facility'):

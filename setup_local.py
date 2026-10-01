@@ -122,6 +122,10 @@ def main() -> int:
     run(sys.executable, str(TOOLS / "extract_goldeneye_textures.py"),
         "--rom", str(goldeneye), "--manifest", str(generated / f"{args.level}.json"),
         "--out", str(generated / f"{args.level}-textures"))
+    run(sys.executable, str(TOOLS / "decode_goldeneye_textures.py"),
+        "--rom", str(goldeneye), "--manifest", str(generated / f"{args.level}.json"),
+        "--textures", str(generated / f"{args.level}-textures"),
+        "--out", str(generated / f"{args.level}-textures/decoded"))
     level_marker = libsm64 / ".mario-goldeneye-level"
     if args.level == "dam" and (not level_marker.is_file() or level_marker.read_text().strip() != "dam"):
         run(sys.executable, str(TOOLS / "switch_level.py"), "--rom", str(goldeneye),
@@ -136,6 +140,9 @@ def main() -> int:
     else:
         run(sys.executable, str(TOOLS / "fix_camera.py"), "--libsm64", str(libsm64))
     run(sys.executable, str(TOOLS / "remove_custom_menu.py"), "--libsm64", str(libsm64))
+    run(sys.executable, str(TOOLS / "install_textures.py"), "--libsm64", str(libsm64),
+        "--manifest", str(generated / f"{args.level}.json"),
+        "--decoded", str(generated / f"{args.level}-textures/decoded"))
 
     if not args.no_build:
         run("make", "test", cwd=libsm64, env=mac_build_environment())
