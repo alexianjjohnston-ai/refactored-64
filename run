@@ -2,8 +2,24 @@
 set -eu
 
 ROOT=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+LIBSM64="$HOME/Projects/n64-mashup/libsm64"
 
 echo "Updating refactored-64..."
 git -C "$ROOT" pull --ff-only
 
-exec python3 "$ROOT/setup_local.py" --level dam --run "$@"
+python3 "$ROOT/setup_local.py" --level dam --no-build "$@"
+python3 "$ROOT/tools/fix_frontend.py" --libsm64 "$LIBSM64"
+python3 - "$ROOT" "$LIBSM64" <<'PY'
+from pathlib import Path
+import sys
+
+root = Path(sys.argv[1]).resolve()
+libsm64 = Path(sys.argv[2]).expanduser().resolve()
+sys.path.insert(0, str(root))
+import setup_local
+
+(libsm64 / "run-test").unlink(missing_ok=True)
+env = setup_local.mac_build_environment()
+setup_local.run("make", "test", cwd=libsm64, env=env)
+setup_local.run("./run-test", cwd=libsm64, env=env)
+PY
