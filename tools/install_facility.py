@@ -6,6 +6,7 @@ Format references: goldeneye-pc-port src/game/bg.c, tools_pc/bg_gdl_census.py.
 import argparse, collections, hashlib, json, math, pathlib, shutil, struct, zlib
 
 from project_constants import GOLDENEYE_WORLD_SCALE
+from stan_collision import build_dam_collision
 
 LEVELS = {
     # ROM offsets come from the US GoldenEye asset table used by the reference
@@ -15,7 +16,7 @@ LEVELS = {
     'dam': (0x5ffc50, 'dam'),
 }
 
-def extract(rom, level='facility', include_materials=False):
+def extract(rom, level='facility', include_materials=False, include_transform=False):
     if hashlib.sha1(rom).hexdigest() != 'abe01e4aeb033b6c0836819f549c791b26cfde83':
         raise ValueError('Expected the original US GoldenEye .z64 ROM.')
     try:
@@ -137,14 +138,30 @@ def extract(rom, level='facility', include_materials=False):
     max_coordinate = max(abs(p[k]) for t in tris for p in t for k in range(3))
     if max_coordinate > 1000000:
         raise ValueError(f'{level.title()} produced unreasonable world coordinates: {max_coordinate}')
+    transform = {"origin": origin, "scale": scale}
+    if include_materials and include_transform:
+        return tris, colors, spawn, rid, material_ids, texture_coords, texture_states, transform
     if include_materials:
         return tris, colors, spawn, rid, material_ids, texture_coords, texture_states
+    if include_transform:
+        return tris, colors, spawn, rid, transform
     return tris,colors,spawn,rid
 
 def install(root,rom,level='facility'):
     if not (root/'src/libsm64.h').is_file() or not (root/'test/main.cpp').is_file():
         raise ValueError('libsm64 checkout not found: use --libsm64 with its folder path.')
-    tris,colors,spawn,rid=extract(rom.read_bytes(), level)
+    rom_bytes = rom.read_bytes()
+    tris,colors,spawn,rid,transform=extract(rom_bytes, level, include_transform=True)
+    collision_tris = tris
+    double_sided_collision = True
+    death_y = -15000
+    if level == 'dam':
+        collision_tris, spawn, collision = build_dam_collision(
+            rom_bytes, transform["origin"], transform["scale"], spawn
+        )
+        rid = collision["spawn_room"]
+        death_y = collision["death_y"]
+        double_sided_collision = False
     paths=['test/main.cpp','test/level.c','test/level.h','test/gl20/gl20_renderer.c','Makefile']
     backup=root/'facility-backup'
     if backup.exists():
@@ -156,9 +173,9 @@ def install(root,rom,level='facility'):
     h='#pragma once\n#include <stddef.h>\n#include "../src/libsm64.h"\nextern const struct SM64Surface surfaces[];\nextern const size_t surfaces_count;\n'
     (root/'test/level.h').write_text(h)
     out=['#include "level.h"','const struct SM64Surface surfaces[] = {']
-    for t in tris:
-        # Both sides collide: room display lists contain mixed winding.
-        for pts in (t,list(reversed(t))):
+    for t in collision_tris:
+        windings = (t, list(reversed(t))) if double_sided_collision else (t,)
+        for pts in windings:
             out.append('{0,0,0,{'+','.join('{'+','.join(map(str,p))+'}' for p in pts)+'}},')
     out+=['};','const size_t surfaces_count=sizeof(surfaces)/sizeof(surfaces[0]);']
     (root/'test/level.c').write_text('\n'.join(out)+'\n')
@@ -175,7 +192,7 @@ def install(root,rom,level='facility'):
     main=main.replace('state[SDL_SCANCODE_X]','(state[SDL_SCANCODE_X] || state[SDL_SCANCODE_SPACE])')
     for old,new in [('UP','W'),('DOWN','S'),('LEFT','A'),('RIGHT','D')]:
         main=main.replace('state[SDL_SCANCODE_'+old+']','(state[SDL_SCANCODE_'+old+'] || state[SDL_SCANCODE_'+new+'])')
-    main=main.replace('memcpy(currPos, marioState.position, sizeof(currPos));','if (marioState.position[1] < -15000) { sm64_mario_delete(marioId); marioId = sm64_mario_create('+spawn_args+'); }\n            memcpy(currPos, marioState.position, sizeof(currPos));')
+    main=main.replace('memcpy(currPos, marioState.position, sizeof(currPos));','if (marioState.position[1] < '+str(death_y)+') { sm64_mario_delete(marioId); marioId = sm64_mario_create('+spawn_args+'); }\n            memcpy(currPos, marioState.position, sizeof(currPos));')
     (root/'test/main.cpp').write_text(main)
     gl=(root/'test/gl20/gl20_renderer.c').read_text()
     gl=gl.replace('glm_perspective( 45.0f,','glm_perspective( 0.785398f,').replace('100.0f, 20000.0f','10.0f, 100000.0f')
@@ -192,7 +209,11 @@ def install(root,rom,level='facility'):
     mk=mk.replace('\tlipo -create -output $@ $@.arm64 $@.x86_64\n\trm $@.arm64 $@.x86_64',
                   '\tlipo -create -output $@ $@.arm64 $@.x86_64\n\tinstall_name_tool -id @executable_path/dist/libsm64.dylib $@\n\trm $@.arm64 $@.x86_64')
     (root/'Makefile').write_text(mk)
-    print(f'Installed {len(tris):,} {level.title()} triangles. Spawn room {rid}.')
+    if level == 'dam':
+        print(f'Installed {len(collision_tris):,} Dam STAN collision triangles. Spawn room {rid}.')
+        print(f"STAN floors {collision['floor_triangles']:,}; boundary walls {collision['wall_triangles']:,}; fall reset Y {death_y}.")
+    else:
+        print(f'Installed {len(tris):,} {level.title()} triangles. Spawn room {rid}.')
     print('Geometry-only prototype: no GoldenEye textures, doors, guards, or weapons yet.')
     print('Backup:',backup)
 

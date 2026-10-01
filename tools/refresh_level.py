@@ -8,16 +8,18 @@ import re
 import shutil
 
 from install_facility import extract
+from stan_collision import build_dam_collision
 from project_constants import GOLDENEYE_WORLD_SCALE
 
 
 NUMBER = r"-?\d+(?:\.\d+)?f?"
 
 
-def level_source(triangles) -> str:
+def level_source(triangles, double_sided=True) -> str:
     out = ['#include "level.h"', 'const struct SM64Surface surfaces[] = {']
     for triangle in triangles:
-        for points in (triangle, list(reversed(triangle))):
+        windings = (triangle, list(reversed(triangle))) if double_sided else (triangle,)
+        for points in windings:
             encoded = ",".join("{" + ",".join(map(str, point)) + "}" for point in points)
             out.append("{0,0,0,{" + encoded + "}},")
     out += ["};", "const size_t surfaces_count=sizeof(surfaces)/sizeof(surfaces[0]);"]
@@ -56,6 +58,17 @@ def replace_spawn(source: str, spawn: tuple[int, int, int]) -> str:
         raise ValueError("Could not uniquely update interpolated Mario spawn")
     return source
 
+
+def replace_fall_reset(source: str, death_y: int) -> str:
+    source, count = re.subn(
+        r"marioState\.position\[1\]\s*<\s*-?\d+(?:\.\d+)?f?",
+        f"marioState.position[1] < {death_y}",
+        source,
+    )
+    if count != 1:
+        raise ValueError("Could not uniquely update the fall-reset threshold")
+    return source
+
 def refresh_renderer_distance(root: Path, backup: Path) -> None:
     for relative in ("test/gl20/gl20_renderer.c", "test/gl33core/gl33core_renderer.c"):
         path = root / relative
@@ -78,9 +91,24 @@ def refresh(root: Path, rom: Path, level: str) -> None:
     if not main_path.is_file() or not level_path.is_file():
         raise ValueError("Installed libsm64 prototype files were not found")
 
-    triangles, _colors, spawn, room = extract(rom.read_bytes(), level)
+    rom_bytes = rom.read_bytes()
+    triangles, _colors, spawn, room, transform = extract(
+        rom_bytes, level, include_transform=True
+    )
+    collision_triangles = triangles
+    double_sided = True
+    collision = None
+    if level == "dam":
+        collision_triangles, spawn, collision = build_dam_collision(
+            rom_bytes, transform["origin"], transform["scale"], spawn
+        )
+        room = collision["spawn_room"]
+        double_sided = False
+
     new_main = replace_spawn(main_path.read_text(encoding="utf-8"), tuple(spawn))
-    new_level = level_source(triangles)
+    if collision is not None:
+        new_main = replace_fall_reset(new_main, collision["death_y"])
+    new_level = level_source(collision_triangles, double_sided=double_sided)
 
     backup = root / "world-scale-backup"
     if not backup.exists():
@@ -100,7 +128,25 @@ def refresh(root: Path, rom: Path, level: str) -> None:
         f"Refreshed {level} at {GOLDENEYE_WORLD_SCALE:g}x: "
         f"{len(triangles):,} triangles, spawn room {room}, spawn {tuple(spawn)}"
     )
-    print(f"Installed world bounds X={bounds[0]} Y={bounds[1]} Z={bounds[2]}")
+    print(f"Rendered world bounds X={bounds[0]} Y={bounds[1]} Z={bounds[2]}")
+    if collision is not None:
+        collision_bounds = [
+            (min(p[axis] for tri in collision_triangles for p in tri),
+             max(p[axis] for tri in collision_triangles for p in tri))
+            for axis in range(3)
+        ]
+        print(
+            f"Installed Dam STAN collision: {collision['floor_triangles']:,} floor triangles, "
+            f"{collision['wall_triangles']:,} boundary-wall triangles."
+        )
+        print(
+            f"Collision bounds X={collision_bounds[0]} Y={collision_bounds[1]} "
+            f"Z={collision_bounds[2]}; fall reset Y={collision['death_y']}."
+        )
+        print(
+            f"Spawn snapped to legal STAN room {collision['spawn_room']} at {tuple(spawn)} "
+            f"(raw snap distance {collision['spawn_snap_distance_raw']:.1f})."
+        )
     print("Original pre-scale files preserved at", backup)
 
 
