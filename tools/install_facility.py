@@ -147,6 +147,8 @@ def install(root,rom):
     mk=mk.replace('C_FILES := $(foreach dir,$(SRC_DIRS),$(wildcard $(dir)/*.c)) $(C_IMPORTED)',
                   'C_FILES := $(filter-out $(C_IMPORTED),$(foreach dir,$(SRC_DIRS),$(wildcard $(dir)/*.c))) $(C_IMPORTED)')
     mk=mk.replace('test/level.c: ./import-test-collision.py\n\t./import-test-collision.py','test/level.c:\n\t@test -f test/level.c')
+    mk=mk.replace('\tlipo -create -output $@ $@.arm64 $@.x86_64\n\trm $@.arm64 $@.x86_64',
+                  '\tlipo -create -output $@ $@.arm64 $@.x86_64\n\tinstall_name_tool -id @executable_path/dist/libsm64.dylib $@\n\trm $@.arm64 $@.x86_64')
     (root/'Makefile').write_text(mk)
     print(f'Installed {len(tris):,} Facility triangles from 77 rooms. Spawn room {rid}.')
     print('Geometry-only prototype: no GoldenEye textures, doors, guards, or weapons yet.')
