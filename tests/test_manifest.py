@@ -30,6 +30,11 @@ class ManifestTests(unittest.TestCase):
         manifest["geometry"]["triangles"] = []
         self.assertTrue(validate_manifest(manifest))
 
+    def test_rejects_malformed_colors(self):
+        manifest = self.sample()
+        manifest["geometry"]["triangles"][0]["colors"] = [[2, 0, 0]] * 3
+        self.assertTrue(validate_manifest(manifest))
+
     def test_is_json_without_rom_data(self):
         text = json.dumps(self.sample())
         self.assertNotIn("ROM", text)

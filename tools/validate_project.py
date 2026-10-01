@@ -14,7 +14,7 @@ from level_manifest import read_manifest  # noqa: E402
 
 LIBSM64_REVISION = "fd11813208272b4271d92bd92feb8f3fdbe61be5"
 GOLDENEYE_SHA1 = "abe01e4aeb033b6c0836819f549c791b26cfde83"
-MARIO_SHA1 = None  # libsm64's make process performs the Mario ROM validation.
+MARIO_SHA1 = "9bef1128717f958171a4afac3ed78ee2bb4e86ce"
 
 
 def git_revision(root: Path) -> str | None:
@@ -55,8 +55,8 @@ def main() -> int:
 
     if args.mario:
         mario = args.mario.expanduser().resolve()
-        if not mario.is_file():
-            failures.append("Mario 64 ROM is missing")
+        if not check_hash(mario, MARIO_SHA1):
+            failures.append("Mario 64 ROM is missing or is not the expected US image")
 
     if args.manifest:
         try:

@@ -7,6 +7,7 @@ directory. ROMs and extracted game files are never copied into the repository.
 from __future__ import annotations
 
 import json
+import math
 from pathlib import Path
 from typing import Any
 
@@ -67,9 +68,25 @@ def validate_manifest(manifest: dict[str, Any]) -> list[str]:
                 continue
             if any(not isinstance(vertex, list) or len(vertex) != 3 for vertex in vertices):
                 errors.append(f"triangle {index} vertices must be 3D lists")
+            elif any(not isinstance(value, (int, float)) or not math.isfinite(value)
+                     for vertex in vertices for value in vertex):
+                errors.append(f"triangle {index} contains a non-finite coordinate")
+            colors = triangle.get("colors") if isinstance(triangle, dict) else None
+            if not isinstance(colors, list) or len(colors) != 3:
+                errors.append(f"triangle {index} must have three colors")
+            elif any(not isinstance(color, list) or len(color) != 3 for color in colors):
+                errors.append(f"triangle {index} colors must be RGB lists")
+            elif any(not isinstance(value, (int, float)) or not math.isfinite(value)
+                     or value < 0 or value > 1 for color in colors for value in color):
+                errors.append(f"triangle {index} colors must be finite values from 0 to 1")
     spawn = manifest.get("spawn")
     if not isinstance(spawn, dict) or not isinstance(spawn.get("position"), list) or len(spawn["position"]) != 3:
         errors.append("spawn.position must be a 3D list")
+    elif any(not isinstance(value, (int, float)) or not math.isfinite(value) for value in spawn["position"]):
+        errors.append("spawn.position must contain finite numbers")
+    rooms = manifest.get("rooms")
+    if not isinstance(rooms, dict) or not isinstance(rooms.get("count"), int) or rooms["count"] < 1:
+        errors.append("rooms.count must be a positive integer")
     if not isinstance(manifest.get("interactables"), list):
         errors.append("interactables must be a list")
     if not isinstance(manifest.get("actors"), list):
