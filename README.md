@@ -87,6 +87,13 @@ From this repository, set up the pinned libsm64 checkout and generate local
 Facility data from ROMs stored on the device:
 
 ```bash
+python3 setup_local.py
+```
+
+It searches common folders such as `Downloads`, `Desktop/N64`, and
+`Documents/N64`. You can also provide a folder explicitly:
+
+```bash
 python3 setup_local.py --rom-dir "/Users/alexian/Desktop/N64"
 ```
 

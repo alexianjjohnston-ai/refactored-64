@@ -32,6 +32,32 @@ def locate(directory: Path, words: tuple[str, ...]) -> Path:
     raise FileNotFoundError(f"Could not find a .z64 ROM containing: {', '.join(words)}")
 
 
+def find_rom_directory(requested: Path | None) -> Path:
+    candidates = []
+    if requested:
+        candidates.append(requested.expanduser().resolve())
+    candidates.extend(
+        Path.home() / relative
+        for relative in ("Downloads", "Desktop/N64", "Documents/N64", "Games")
+    )
+    for directory in candidates:
+        if directory.is_dir():
+            try:
+                locate(directory, ("mario",))
+                locate(directory, ("goldeneye",))
+                print(f"Found ROM folder: {directory}")
+                return directory
+            except FileNotFoundError:
+                continue
+    if not sys.stdin.isatty():
+        raise FileNotFoundError("ROM folder not found; rerun with --rom-dir /path/to/your/ROMs")
+    entered = input("Enter the folder containing your Mario 64 and GoldenEye .z64 ROMs: ").strip()
+    directory = Path(entered).expanduser().resolve()
+    locate(directory, ("mario",))
+    locate(directory, ("goldeneye",))
+    return directory
+
+
 def run(*command: str, cwd: Path = ROOT, env: dict[str, str] | None = None) -> None:
     print("+", " ".join(command))
     subprocess.run(command, cwd=cwd, check=True, env=env)
@@ -63,14 +89,14 @@ def ensure_libsm64(path: Path, clone_url: str) -> None:
 
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--rom-dir", type=Path, required=True)
+    parser.add_argument("--rom-dir", type=Path)
     parser.add_argument("--libsm64", type=Path, default=Path.home() / "Projects/n64-mashup/libsm64")
     parser.add_argument("--generated", type=Path, default=Path.home() / "Projects/n64-mashup/generated")
     parser.add_argument("--clone-url", default="https://github.com/libsm64/libsm64.git")
     parser.add_argument("--no-build", action="store_true")
     args = parser.parse_args()
 
-    rom_dir = args.rom_dir.expanduser().resolve()
+    rom_dir = find_rom_directory(args.rom_dir)
     mario = locate(rom_dir, ("mario",))
     goldeneye = locate(rom_dir, ("goldeneye",))
     if sha1(mario) != MARIO_SHA1:
