@@ -143,7 +143,10 @@ def install(root,rom):
     gl=gl.replace('worldUv = malloc(sizeof(float) * surfaces_count * 6);','worldUv = calloc(surfaces_count * 6, sizeof(float));')
     gl=gl.replace('(.5+.5*mesh->normal[9*i+j])','(.5+.5*fabsf(mesh->normal[9*i+j]))')
     (root/'test/gl20/gl20_renderer.c').write_text(gl)
-    mk=(root/'Makefile').read_text().replace('test/level.c: ./import-test-collision.py\n\t./import-test-collision.py','test/level.c:\n\t@test -f test/level.c')
+    mk=(root/'Makefile').read_text()
+    mk=mk.replace('C_FILES := $(foreach dir,$(SRC_DIRS),$(wildcard $(dir)/*.c)) $(C_IMPORTED)',
+                  'C_FILES := $(filter-out $(C_IMPORTED),$(foreach dir,$(SRC_DIRS),$(wildcard $(dir)/*.c))) $(C_IMPORTED)')
+    mk=mk.replace('test/level.c: ./import-test-collision.py\n\t./import-test-collision.py','test/level.c:\n\t@test -f test/level.c')
     (root/'Makefile').write_text(mk)
     print(f'Installed {len(tris):,} Facility triangles from 77 rooms. Spawn room {rid}.')
     print('Geometry-only prototype: no GoldenEye textures, doors, guards, or weapons yet.')

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import os
 from pathlib import Path
 import subprocess
 import sys
@@ -31,9 +32,21 @@ def locate(directory: Path, words: tuple[str, ...]) -> Path:
     raise FileNotFoundError(f"Could not find a .z64 ROM containing: {', '.join(words)}")
 
 
-def run(*command: str, cwd: Path = ROOT) -> None:
+def run(*command: str, cwd: Path = ROOT, env: dict[str, str] | None = None) -> None:
     print("+", " ".join(command))
-    subprocess.run(command, cwd=cwd, check=True)
+    subprocess.run(command, cwd=cwd, check=True, env=env)
+
+
+def mac_build_environment() -> dict[str, str]:
+    environment = os.environ.copy()
+    try:
+        sdl_prefix = subprocess.check_output(("brew", "--prefix", "sdl2"), text=True).strip()
+        glew_prefix = subprocess.check_output(("brew", "--prefix", "glew"), text=True).strip()
+    except (OSError, subprocess.CalledProcessError) as error:
+        raise RuntimeError("Homebrew packages sdl2 and glew are required to build the Mac test app") from error
+    environment["CPATH"] = f"{sdl_prefix}/include:{glew_prefix}/include"
+    environment["LIBRARY_PATH"] = f"{sdl_prefix}/lib:{glew_prefix}/lib"
+    return environment
 
 
 def ensure_libsm64(path: Path, clone_url: str) -> None:
@@ -90,7 +103,7 @@ def main() -> int:
         run(sys.executable, str(TOOLS / "fix_camera.py"), "--libsm64", str(libsm64))
 
     if not args.no_build:
-        run("make", "test", cwd=libsm64)
+        run("make", "test", cwd=libsm64, env=mac_build_environment())
     print("Local setup complete. ROMs remained on the device and were not copied into this repository.")
     return 0
 
