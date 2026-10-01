@@ -369,7 +369,7 @@ def c_source(placements, coin_frames, star_asset):
     ):
         for point in placements[key]:
             coin_rows.append(
-                "    {{ {%.3ff, %.3ff, %.3ff}, 1, %s, %d }}"
+                "    {{%.3ff, %.3ff, %.3ff}, 1, %s, %d}"
                 % (*point, coin_type, value)
             )
 
