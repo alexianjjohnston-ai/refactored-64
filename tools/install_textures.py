@@ -12,6 +12,20 @@ HEADER='test/ge_textured_level.h'
 def digest(data):
     return hashlib.sha256(data).hexdigest()
 
+def canonical_far_plane(source):
+    source=source.replace('10.0f, 30000.0f','10.0f, 100000.0f')
+    source=source.replace('100.0f, 20000.0f','10.0f, 100000.0f')
+    return source
+
+def patched_renderer(source):
+    anchor='glDisable(GL_TEXTURE_2D);\n\tglDrawArrays(GL_TRIANGLES, 0, renderState->collision.num_vertices);\n\tglEnable(GL_TEXTURE_2D);'
+    init='load_collision_mesh( &renderState->collision );'
+    if source.count(anchor)!=1 or source.count(init)!=1:
+        raise ValueError('Renderer differs from expected prototype; no files changed')
+    source=source.replace('#include "../level.h"','#include "../level.h"\n#include "../ge_textured_level.h"')
+    source=source.replace(init,init+'\n\tge_texture_init();').replace(anchor,'ge_texture_draw();')
+    return source
+
 def texture_uv(st, state, texture):
     result=[]
     for axis,dimension in enumerate((texture['width'],texture['height'])):
@@ -96,7 +110,28 @@ def main():
         return
     if backup.exists():
         state=json.loads((backup/'state.json').read_text())
-        if all((root/n).is_file() and digest((root/n).read_bytes())==state[n] for n in (RENDERER,HEADER)):
+        header_matches=header.is_file() and digest(header.read_bytes())==state[HEADER]
+        renderer_matches=renderer.is_file() and digest(renderer.read_bytes())==state[RENDERER]
+
+        # The world-scale refresh intentionally extends the renderer far plane.
+        # Accept only that exact, reproducible renderer change; unknown edits
+        # still fail closed. Preserve the old rollback source before advancing
+        # the baseline so texture undo does not undo the world-scale fix.
+        if header_matches and not renderer_matches and renderer.is_file() and (backup/'renderer.c').is_file():
+            baseline=(backup/'renderer.c').read_text()
+            expected=canonical_far_plane(patched_renderer(baseline))
+            current=renderer.read_text()
+            if current==expected:
+                previous_renderer=backup/'renderer-before-world-scale.c'
+                if not previous_renderer.exists():
+                    shutil.copy2(backup/'renderer.c',previous_renderer)
+                (backup/'renderer.c').write_text(canonical_far_plane(baseline))
+                state[RENDERER]=digest(renderer.read_bytes())
+                (backup/'state.json').write_text(json.dumps(state,indent=2)+'\n')
+                renderer_matches=True
+                print('Accepted verified 100000-unit far-plane update; texture rollback baseline advanced safely.')
+
+        if header_matches and renderer_matches:
             generated=generate(json.loads(a.manifest.read_text()),a.decoded)
             if generated==header.read_text():
                 print('Textures already installed; preserving backup.')
@@ -106,21 +141,18 @@ def main():
                 if not previous.exists(): shutil.copy2(header,previous)
                 header.write_text(generated)
                 state[HEADER]=digest(header.read_bytes())
-                (backup/'state.json').write_text(json.dumps(state,indent=2))
+                (backup/'state.json').write_text(json.dumps(state,indent=2)+'\n')
                 # The upstream Makefile does not track generated includes.
                 renderer.touch()
+                state[RENDERER]=digest(renderer.read_bytes())
+                (backup/'state.json').write_text(json.dumps(state,indent=2)+'\n')
                 print('Updated generated textures; previous header and renderer backup retained.')
                 return
         raise ValueError('texture-backup exists; refusing to overwrite existing work')
     if header.exists(): raise ValueError('Existing generated header; refusing overwrite')
     source=renderer.read_text()
-    anchor='glDisable(GL_TEXTURE_2D);\n\tglDrawArrays(GL_TRIANGLES, 0, renderState->collision.num_vertices);\n\tglEnable(GL_TEXTURE_2D);'
-    init='load_collision_mesh( &renderState->collision );'
-    if source.count(anchor)!=1 or source.count(init)!=1:
-        raise ValueError('Renderer differs from expected prototype; no files changed')
     generated=generate(json.loads(a.manifest.read_text()),a.decoded)
-    source=source.replace('#include "../level.h"','#include "../level.h"\n#include "../ge_textured_level.h"')
-    source=source.replace(init,init+'\n\tge_texture_init();').replace(anchor,'ge_texture_draw();')
+    source=patched_renderer(source)
     backup.mkdir(); shutil.copy2(renderer,backup/'renderer.c')
     header.write_text(generated); renderer.write_text(source)
     (backup/'state.json').write_text(json.dumps({n:digest((root/n).read_bytes()) for n in (RENDERER,HEADER)},indent=2))
