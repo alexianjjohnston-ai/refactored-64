@@ -2,16 +2,49 @@
 """Decode local ROM slices to RGBA8 using pinned libpdtex source."""
 import argparse
 import hashlib
+import importlib.util
 import json
 from pathlib import Path
 import struct
 import subprocess
+import sys
 import tempfile
 import zlib
 
 REFERENCE_URL = 'https://github.com/jkdansereau/goldeneye-pc-port.git'
 REVISION = '0e8c2ce2135ce56bd09e0c3a0f76a74d2ed6337f'
 TOOLS = Path(__file__).resolve().parent
+
+def decode_lookup(blob, reference):
+    """Use the reference's endian-independent lookup codec for methods 5-7."""
+    if blob[0]&64 or (blob[3]&15) not in (5,6,7):
+        return None
+    sys.path.insert(0,str(reference/'tools_pc'))
+    try:
+        spec=importlib.util.spec_from_file_location('ge_reference_texdecode',reference/'tools_pc/texdecode.py')
+        decoder=importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(decoder)
+    finally:
+        sys.path.pop(0)
+    bits=decoder.Bits(blob,1)
+    fmt,w,h,cm=bits.read(4),bits.read(8),bits.read(8),bits.read(4)
+    if not 0<w<=256 or not 0<h<=256: raise ValueError('Invalid dimensions')
+    rows=decoder.decode_image(bits,fmt,w,h,cm)
+    pixels=bytearray()
+    for row in rows:
+        for v in row:
+            if fmt==0: rgba=tuple(v.to_bytes(4,'big'))
+            elif fmt==1: rgba=((v>>11)*255//31,((v>>6)&31)*255//31,((v>>1)&31)*255//31,(v&1)*255)
+            elif fmt==2: rgba=(*v.to_bytes(3,'big'),255)
+            elif fmt==3: rgba=((v>>10)*255//31,((v>>5)&31)*255//31,(v&31)*255//31,255)
+            elif fmt==4: rgba=(v>>8,v>>8,v>>8,v&255)
+            elif fmt==5: rgba=((v>>4)*17,)*3+((v&15)*17,)
+            elif fmt==6: rgba=((v>>1)*255//7,)*3+((v&1)*255,)
+            elif fmt==7: rgba=(v,)*3+(255,)
+            elif fmt==8: rgba=(v*17,)*3+(255,)
+            else: raise ValueError('Unsupported lookup format')
+            pixels.extend(rgba)
+    return w,h,fmt,bytes(pixels)
 
 def png(width, height, pixels):
     def chunk(kind, data):
@@ -48,9 +81,13 @@ def main():
             stem=f'texture-{tid:04d}'
             source=a.textures/(stem+'.bin')
             target=Path(tmp)/(stem+'.rgba')
-            r=subprocess.run([str(exe),str(source),str(target)],capture_output=True,text=True,timeout=20,check=True)
-            w,h,fmt=map(int,r.stdout.split())
-            pixels=target.read_bytes()
+            decoded=decode_lookup(source.read_bytes(),reference)
+            if decoded is None:
+                r=subprocess.run([str(exe),str(source),str(target)],capture_output=True,text=True,timeout=20,check=True)
+                w,h,fmt=map(int,r.stdout.split())
+                pixels=target.read_bytes()
+            else:
+                w,h,fmt,pixels=decoded
             if len(pixels)!=w*h*4:
                 raise ValueError(f'Wrong pixel count for {tid}')
             (a.out/(stem+'.rgba')).write_bytes(pixels)

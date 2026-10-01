@@ -63,6 +63,7 @@ def main():
     p.add_argument('--manifest',type=Path)
     p.add_argument('--decoded',type=Path)
     p.add_argument('--undo',action='store_true')
+    p.add_argument('--update',action='store_true')
     a=p.parse_args(); root=a.libsm64.resolve(); backup=root/'texture-backup'
     renderer=root/RENDERER; header=root/HEADER
     if a.undo:
@@ -81,6 +82,16 @@ def main():
             generated=generate(json.loads(a.manifest.read_text()),a.decoded)
             if generated==header.read_text():
                 print('Textures already installed; preserving backup.')
+                return
+            if a.update:
+                previous=backup/('generated-'+state[HEADER]+'.h')
+                if not previous.exists(): shutil.copy2(header,previous)
+                header.write_text(generated)
+                state[HEADER]=digest(header.read_bytes())
+                (backup/'state.json').write_text(json.dumps(state,indent=2))
+                # The upstream Makefile does not track generated includes.
+                renderer.touch()
+                print('Updated generated textures; previous header and renderer backup retained.')
                 return
         raise ValueError('texture-backup exists; refusing to overwrite existing work')
     if header.exists(): raise ValueError('Existing generated header; refusing overwrite')

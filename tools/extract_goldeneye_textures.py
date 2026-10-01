@@ -8,10 +8,11 @@ from __future__ import annotations
 
 import argparse
 import csv
+import hashlib
 from pathlib import Path
 from urllib.request import urlopen
 
-INDEX_URL = "https://raw.githubusercontent.com/jkdansereau/goldeneye-pc-port/main/imagelist.u.csv"
+INDEX_URL = "https://raw.githubusercontent.com/jkdansereau/goldeneye-pc-port/0e8c2ce2135ce56bd09e0c3a0f76a74d2ed6337f/imagelist.u.csv"
 
 
 def load_index(cache: Path) -> list[tuple[int, int]]:
@@ -35,16 +36,18 @@ def main() -> int:
     cache = args.index_cache or args.out.expanduser() / "imagelist.u.csv"
     rows = load_index(cache.expanduser())
     rom = args.rom.expanduser().read_bytes()
+    if hashlib.sha1(rom).hexdigest() != 'abe01e4aeb033b6c0836819f549c791b26cfde83':
+        raise ValueError('Expected original US GoldenEye ROM')
     out = args.out.expanduser()
     out.mkdir(parents=True, exist_ok=True)
     extracted = []
     for texture_id in ids:
-        if texture_id >= len(rows):
-            continue
+        if texture_id < 0 or texture_id >= len(rows):
+            raise ValueError(f'Unknown texture ID: {texture_id}')
         offset, size = rows[texture_id]
         blob = rom[offset:offset + size]
-        if len(blob) != size:
-            continue
+        if offset < 0 or size <= 0 or len(blob) != size:
+            raise ValueError(f'Texture {texture_id} is outside ROM bounds')
         path = out / f"texture-{texture_id:04d}.bin"
         path.write_bytes(blob)
         extracted.append({"id": texture_id, "offset": offset, "size": size, "file": path.name})
