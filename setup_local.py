@@ -177,6 +177,12 @@ def main() -> int:
         "--coin-assets", str(generated / "sm64"),
         "--level", args.level,
     )
+    run(
+        sys.executable, str(TOOLS / "install_intro.py"),
+        "--libsm64", str(libsm64),
+        "--rom", str(goldeneye),
+        "--level", args.level,
+    )
 
     if not args.no_build:
         # Generated level/header files are not all represented perfectly in the
