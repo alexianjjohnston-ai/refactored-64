@@ -29,7 +29,12 @@ def main() -> int:
     if digest != EXPECTED_SHA1:
         parser.error("Expected the original US GoldenEye .z64 ROM.")
     triangles, colors, spawn, room = extract(rom.read_bytes(), args.level)
-    write_manifest(facility_manifest(triangles, colors, spawn, room, args.level), args.out.expanduser().resolve())
+    destination = args.out.expanduser().resolve()
+    write_manifest(facility_manifest(triangles, colors, spawn, room, args.level), destination)
+    atlas = destination.with_name(destination.stem + "-materials.ppm")
+    import subprocess
+    subprocess.run([sys.executable, str(TOOLS / "texture_converter.py"),
+                    "--manifest", str(destination), "--out", str(atlas)], check=True)
     print(f"Wrote {args.level.title()} manifest with {len(triangles):,} triangles: {args.out}")
     return 0
 
