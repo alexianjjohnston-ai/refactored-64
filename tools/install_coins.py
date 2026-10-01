@@ -353,6 +353,7 @@ int mario_goldeneye_coins_total(void);
 int mario_goldeneye_coin_value(void);
 int mario_goldeneye_red_coins(void);
 int mario_goldeneye_stars(void);
+int mario_goldeneye_star_collected(int index);
 
 #ifdef __cplusplus
 }
@@ -516,6 +517,10 @@ int mario_goldeneye_coins_total(void) { return (int)(sizeof(gCoins) / sizeof(gCo
 int mario_goldeneye_coin_value(void) { return gCoinValue; }
 int mario_goldeneye_red_coins(void) { return gRedCollected; }
 int mario_goldeneye_stars(void) { return gStarsCollected; }
+int mario_goldeneye_star_collected(int index) {
+    if (index < 0 || index >= STAR_COUNT) return 0;
+    return gStars[index].collected;
+}
 
 static const char *star_name(int type) {
     if (type == STAR_RED) return "8 Red Coins";

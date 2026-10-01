@@ -152,3 +152,85 @@ ASSET_CATALOG["power_star"]={
     "surface_dimensions":[32,32],"eye_dimensions":[32,32],
     "prepared_subdir":POWER_STAR_ASSET_NAME,
 }
+
+
+# Original SM64 in-game HUD assets.
+SM64_SEGMENT2_MIO0_OFFSET=0x108A40
+SM64_HUD_ASSET_NAME="hud"
+SM64_HUD_GLYPH_BYTES=16*16*2
+SM64_HUD_GLYPH_OFFSETS={
+    **{f"digit-{i}":i*0x200 for i in range(10)},
+    "multiply":0x05600,
+    "coin":0x05800,
+    "mario-head":0x05A00,
+    "star":0x05C00,
+}
+SM64_POWER_BASE_OFFSETS={
+    "power-left":(0x233E0,32,64),
+    "power-right":(0x243E0,32,64),
+}
+SM64_POWER_HEALTH_OFFSETS={
+    1:0x28BE0, 2:0x283E0, 3:0x27BE0, 4:0x273E0,
+    5:0x26BE0, 6:0x263E0, 7:0x25BE0, 8:0x253E0,
+}
+
+def segment2_segment(rom:bytes)->bytes:
+    verify_us_rom(rom)
+    return mio0_decompress(rom,SM64_SEGMENT2_MIO0_OFFSET)
+
+def extract_sm64_hud_asset(rom:bytes):
+    segment2=segment2_segment(rom)
+    common1=common1_segment(rom)
+    result={}
+    for name,offset in SM64_HUD_GLYPH_OFFSETS.items():
+        raw=segment2[offset:offset+SM64_HUD_GLYPH_BYTES]
+        if len(raw)!=SM64_HUD_GLYPH_BYTES:
+            raise ValueError(f"SM64 HUD glyph {name} is truncated")
+        result[name]=rgba16_to_rgba8(raw)
+    for name,(offset,width,height) in SM64_POWER_BASE_OFFSETS.items():
+        size=width*height*2
+        raw=common1[offset:offset+size]
+        if len(raw)!=size: raise ValueError(f"SM64 HUD asset {name} is truncated")
+        result[name]=rgba16_to_rgba8(raw)
+    for wedges,offset in SM64_POWER_HEALTH_OFFSETS.items():
+        raw=common1[offset:offset+32*32*2]
+        if len(raw)!=32*32*2: raise ValueError(f"SM64 power meter {wedges} is truncated")
+        result[f"power-{wedges}"]=rgba16_to_rgba8(raw)
+    return result
+
+def write_sm64_hud_asset(rom:bytes,root:Path):
+    directory=Path(root).expanduser().resolve()/SM64_HUD_ASSET_NAME
+    directory.mkdir(parents=True,exist_ok=True)
+    asset=extract_sm64_hud_asset(rom)
+    paths=[]
+    for name,data in asset.items():
+        path=directory/f"{name}.rgba8"
+        path.write_bytes(data); paths.append(path)
+    return paths
+
+def read_sm64_hud_asset(root:Path):
+    directory=Path(root).expanduser().resolve()/SM64_HUD_ASSET_NAME
+    names=list(SM64_HUD_GLYPH_OFFSETS)
+    names += list(SM64_POWER_BASE_OFFSETS)
+    names += [f"power-{i}" for i in range(1,9)]
+    asset={}
+    for name in names:
+        path=directory/f"{name}.rgba8"
+        if not path.is_file(): raise FileNotFoundError(f"Missing prepared SM64 HUD asset: {path}")
+        asset[name]=path.read_bytes()
+    for name in SM64_HUD_GLYPH_OFFSETS:
+        if len(asset[name])!=16*16*4: raise ValueError(f"Prepared HUD glyph {name} has wrong size")
+    for name,(_offset,width,height) in SM64_POWER_BASE_OFFSETS.items():
+        if len(asset[name])!=width*height*4: raise ValueError(f"Prepared {name} has wrong size")
+    for i in range(1,9):
+        if len(asset[f"power-{i}"])!=32*32*4: raise ValueError(f"Prepared power-{i} has wrong size")
+    return asset
+
+ASSET_CATALOG["hud"]={
+    "game":"sm64",
+    "segment":"segment2 + common1",
+    "format":"original RGBA16 converted locally to RGBA8",
+    "glyph_dimensions":[16,16],
+    "power_meter_base":[64,64],
+    "prepared_subdir":SM64_HUD_ASSET_NAME,
+}

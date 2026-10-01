@@ -4,7 +4,7 @@ from __future__ import annotations
 import argparse,json,subprocess,sys
 from pathlib import Path
 from asset_cache import AssetCache,fingerprint,sha1_file,sha256_file
-from sm64_assets import ASSET_CATALOG,MARIO_SHA1,write_power_star_asset,write_yellow_coin_asset
+from sm64_assets import ASSET_CATALOG,MARIO_SHA1,write_power_star_asset,write_sm64_hud_asset,write_yellow_coin_asset\nfrom goldeneye_ui_assets import write_bank_gothic_asset
 
 TOOLS=Path(__file__).resolve().parent
 GOLDENEYE_SHA1="abe01e4aeb033b6c0836819f549c791b26cfde83"
@@ -31,7 +31,17 @@ def prepare_sm64(cache,mario,generated):
         root/"power-star"/"body.vtx",
         root/"power-star"/"eyes.vtx",
     ]
-    fp=fingerprint("sm64-shared-v1",sha1_file(mario),json.dumps(ASSET_CATALOG,sort_keys=True),
+    outputs += [root/"hud"/f"digit-{i}.rgba8" for i in range(10)]
+    outputs += [
+        root/"hud"/"multiply.rgba8",
+        root/"hud"/"coin.rgba8",
+        root/"hud"/"mario-head.rgba8",
+        root/"hud"/"star.rgba8",
+        root/"hud"/"power-left.rgba8",
+        root/"hud"/"power-right.rgba8",
+    ]
+    outputs += [root/"hud"/f"power-{i}.rgba8" for i in range(1,9)]
+    fp=fingerprint("sm64-shared-v2",sha1_file(mario),json.dumps(ASSET_CATALOG,sort_keys=True),
                    files=(TOOLS/"sm64_assets.py",))
     if cache.is_fresh("sm64.shared",fp,outputs):
         print("Using cached assets: sm64.shared")
@@ -39,9 +49,29 @@ def prepare_sm64(cache,mario,generated):
         rom=mario.read_bytes()
         write_yellow_coin_asset(rom,root)
         write_power_star_asset(rom,root)
+        write_sm64_hud_asset(rom,root)
         cache.mark("sm64.shared",fp,outputs)
         print("Prepared shared SM64 assets:",root)
     return {"root":str(root),"catalog":ASSET_CATALOG}
+
+def prepare_goldeneye_ui(cache,goldeneye,generated):
+    root=generated/"goldeneye"
+    outputs=[
+        root/"ui"/"bank-gothic"/"font.bin",
+        root/"ui"/"bank-gothic"/"font.json",
+    ]
+    fp=fingerprint(
+        "goldeneye-ui-v1",
+        sha1_file(goldeneye),
+        files=(TOOLS/"goldeneye_ui_assets.py",),
+    )
+    if cache.is_fresh("goldeneye.ui",fp,outputs):
+        print("Using cached assets: goldeneye.ui")
+    else:
+        write_bank_gothic_asset(goldeneye.read_bytes(),root)
+        cache.mark("goldeneye.ui",fp,outputs)
+        print("Prepared original GoldenEye UI assets:",root/"ui")
+    return {"root":str(root),"bank_gothic":str(root/"ui"/"bank-gothic")}
 
 def prepare_level(cache,goldeneye,generated,level):
     manifest=generated/f"{level}.json"
@@ -78,7 +108,8 @@ def main():
     if sha1_file(mario)!=MARIO_SHA1: raise ValueError("Expected original US Super Mario 64 ROM")
     cache=AssetCache(generated)
     index={"schema":1,"sources":{"goldeneye_sha1":GOLDENEYE_SHA1,"mario_sha1":MARIO_SHA1,"roms_stay_local":True},
-           "sm64":prepare_sm64(cache,mario,generated),"goldeneye":{}}
+           "sm64":prepare_sm64(cache,mario,generated),
+           "goldeneye":{"ui":prepare_goldeneye_ui(cache,ge,generated)}}
     for level in dict.fromkeys(a.level or ["dam"]):
         index["goldeneye"][level]=prepare_level(cache,ge,generated,level)
     (generated/"asset-index.json").write_text(json.dumps(index,indent=2)+"\n")

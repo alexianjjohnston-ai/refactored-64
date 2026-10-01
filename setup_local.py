@@ -183,6 +183,12 @@ def main() -> int:
         "--rom", str(goldeneye),
         "--level", args.level,
     )
+    run(
+        sys.executable, str(TOOLS / "install_ui.py"),
+        "--libsm64", str(libsm64),
+        "--sm64-assets", str(generated / "sm64"),
+        "--goldeneye-assets", str(generated / "goldeneye"),
+    )
 
     if not args.no_build:
         # Generated level/header files are not all represented perfectly in the
