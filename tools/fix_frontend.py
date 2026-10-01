@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """Post-install frontend repair for mission select, intro gating, pause, and GL state.
 
-The existing installers generate intro/UI/collectible C from local ROM assets. This
-step keeps those installers intact and applies a small deterministic patch to the
-local libsm64 checkout before build.
+The normal installers generate C files from local ROM assets. This pass patches
+those generated files before build so we can iterate on frontend flow without
+rewriting the working asset extractors.
 """
 from __future__ import annotations
 
@@ -32,14 +32,13 @@ def replace_range(source: str, start: str, end: str, new: str, name: str) -> str
 
 def patch_intro_header(path: Path) -> None:
     source = path.read_text(encoding="utf-8")
-    if "goldeneye_intro_start" in source:
-        return
-    source = replace_once(
-        source,
-        "void goldeneye_intro_init(void);\n",
-        "void goldeneye_intro_init(void);\nvoid goldeneye_intro_start(void);\n",
-        "intro start declaration",
-    )
+    if "goldeneye_intro_start" not in source:
+        source = replace_once(
+            source,
+            "void goldeneye_intro_init(void);\n",
+            "void goldeneye_intro_init(void);\nvoid goldeneye_intro_start(void);\n",
+            "intro start declaration",
+        )
     path.write_text(source, encoding="utf-8")
 
 
@@ -69,21 +68,24 @@ def patch_intro_source(path: Path) -> None:
             "if (pressed && goldeneye_intro_active()) gSkip = 1;",
             1,
         )
-        source = source.replace("#include \"goldeneye_intro.h\"\n", "#include \"goldeneye_intro.h\"\n// FRONTEND_REPAIR_V1\n", 1)
+        source = source.replace(
+            "#include \"goldeneye_intro.h\"\n",
+            "#include \"goldeneye_intro.h\"\n// FRONTEND_REPAIR_V1\n",
+            1,
+        )
     path.write_text(source, encoding="utf-8")
 
 
 def patch_main(path: Path) -> None:
     source = path.read_text(encoding="utf-8")
-    replacements = {
+    for old, new in {
         "uiPauseDown = SDL_GameControllerGetButton(controller, SDL_CONTROLLER_BUTTON_START);":
             "uiPauseDown = uiPauseDown || SDL_GameControllerGetButton(controller, SDL_CONTROLLER_BUTTON_START);",
         "uiLeftDown = SDL_GameControllerGetButton(controller, SDL_CONTROLLER_BUTTON_DPAD_LEFT);":
             "uiLeftDown = uiLeftDown || SDL_GameControllerGetButton(controller, SDL_CONTROLLER_BUTTON_DPAD_LEFT);",
         "uiRightDown = SDL_GameControllerGetButton(controller, SDL_CONTROLLER_BUTTON_DPAD_RIGHT);":
             "uiRightDown = uiRightDown || SDL_GameControllerGetButton(controller, SDL_CONTROLLER_BUTTON_DPAD_RIGHT);",
-    }
-    for old, new in replacements.items():
+    }.items():
         source = source.replace(old, new)
     path.write_text(source, encoding="utf-8")
 
@@ -91,15 +93,17 @@ def patch_main(path: Path) -> None:
 def patch_collectible_gl(path: Path) -> None:
     source = path.read_text(encoding="utf-8")
     if "COIN_GL_STATE_FRONTEND_REPAIR_V1" not in source:
-        source = source.replace(
+        source = replace_once(
+            source,
             "    glPushAttrib(\n        GL_ENABLE_BIT | GL_CURRENT_BIT | GL_TEXTURE_BIT |\n        GL_COLOR_BUFFER_BIT | GL_LIGHTING_BIT | GL_TRANSFORM_BIT\n    );",
             "    // COIN_GL_STATE_FRONTEND_REPAIR_V1\n    glPushAttrib(GL_ALL_ATTRIB_BITS);\n    glMatrixMode(GL_TEXTURE);\n    glPushMatrix();\n    glLoadIdentity();\n    glMatrixMode(GL_MODELVIEW);",
-            1,
+            "collectible GL push state",
         )
-        source = source.replace(
+        source = replace_once(
+            source,
             "    glPopAttrib();\n    glMatrixMode(previousMatrixMode);",
             "    glMatrixMode(GL_TEXTURE);\n    glPopMatrix();\n    glPopAttrib();\n    glMatrixMode(previousMatrixMode);",
-            1,
+            "collectible GL pop state",
         )
     path.write_text(source, encoding="utf-8")
 
@@ -109,23 +113,25 @@ def patch_ui(path: Path) -> None:
     if "UI_FRONTEND_REPAIR_V1" in source:
         return
 
-    source = source.replace(
+    source = replace_once(
+        source,
         "static int gTexturesReady=0;\nstatic int gPaused=0;",
         "static int gTexturesReady=0;\n// UI_FRONTEND_REPAIR_V1\nenum UiMode { UI_MODE_MISSION_SELECT = 0, UI_MODE_GAME = 1 };\nstatic int gMode=UI_MODE_MISSION_SELECT;\nstatic GLint gPreviousMatrixMode=GL_MODELVIEW;\nstatic int gPaused=0;",
-        1,
+        "UI mode state",
     )
-    source = source.replace(
+    source = replace_once(
+        source,
         "    glPushAttrib(GL_ENABLE_BIT|GL_CURRENT_BIT|GL_TEXTURE_BIT|GL_COLOR_BUFFER_BIT|GL_TRANSFORM_BIT);",
         "    glGetIntegerv(GL_MATRIX_MODE,&gPreviousMatrixMode);\n    glPushAttrib(GL_ALL_ATTRIB_BITS);\n    glMatrixMode(GL_TEXTURE);\n    glPushMatrix();\n    glLoadIdentity();",
-        1,
+        "UI GL push state",
     )
-    source = source.replace(
+    source = replace_once(
+        source,
         "    glPopAttrib();\n    glMatrixMode(GL_MODELVIEW);",
         "    glMatrixMode(GL_TEXTURE);\n    glPopMatrix();\n    glPopAttrib();\n    glMatrixMode(gPreviousMatrixMode);",
-        1,
+        "UI GL pop state",
     )
 
-    insert_before = "void mario_goldeneye_ui_handle_input"
     menu_functions = r'''
 static void draw_mission_select_page(void)
 {
@@ -148,10 +154,13 @@ static void draw_intro_overlay(void)
 }
 
 '''
-    source = source.replace(insert_before, menu_functions + insert_before, 1)
+    source = replace_once(
+        source,
+        "void mario_goldeneye_ui_handle_input",
+        menu_functions + "void mario_goldeneye_ui_handle_input",
+        "UI frontend page insertion",
+    )
 
-    handle_start = "void mario_goldeneye_ui_handle_input"
-    paused_start = "int mario_goldeneye_ui_paused"
     new_handle = r'''void mario_goldeneye_ui_handle_input(int pauseDown,int leftDown,int rightDown)
 {
     if(gMode==UI_MODE_MISSION_SELECT){
@@ -175,19 +184,21 @@ static void draw_intro_overlay(void)
 }
 
 '''
-    source = replace_range(source, handle_start, paused_start, new_handle, "UI input handler")
-    source = source.replace(
-        "int mario_goldeneye_ui_paused(void){ return gPaused; }",
-        "int mario_goldeneye_ui_paused(void){ return gPaused || gMode==UI_MODE_MISSION_SELECT; }",
-        1,
-    )
-
-    draw_start = "void mario_goldeneye_ui_draw_gl20"
     source = replace_range(
         source,
-        draw_start,
-        "}\n'''\n    return (template",
-        r'''void mario_goldeneye_ui_draw_gl20(const struct SM64MarioState *marioState)
+        "void mario_goldeneye_ui_handle_input",
+        "int mario_goldeneye_ui_paused",
+        new_handle,
+        "UI input handler",
+    )
+    source = replace_once(
+        source,
+        "int mario_goldeneye_ui_paused(void){ return gPaused; }",
+        "int mario_goldeneye_ui_paused(void){ return gPaused || gMode==UI_MODE_MISSION_SELECT; }",
+        "UI pause predicate",
+    )
+
+    new_draw = r'''void mario_goldeneye_ui_draw_gl20(const struct SM64MarioState *marioState)
 {
     ensure_textures();
     begin_2d();
@@ -203,14 +214,16 @@ static void draw_intro_overlay(void)
     }
     end_2d();
 }
-''',
+'''
+    source = replace_range(
+        source,
+        "void mario_goldeneye_ui_draw_gl20",
+        "\n'''\n    return (template",
+        new_draw,
         "UI draw function",
     )
-    source += "}\n'''\n    return (template" if not source.endswith("}\n'''\n    return (template") and "return (template" not in source[-200:] else ""
-    # The range replacement removes the delimiter; restore it if the conservative
-    # guard above was not needed. Simpler safe fix:
-    if "return (template" not in source:
-        raise ValueError("UI template return was damaged")
+    if "\n'''\n    return (template" not in source:
+        raise ValueError("UI template delimiter missing after draw replacement")
     path.write_text(source, encoding="utf-8")
 
 
