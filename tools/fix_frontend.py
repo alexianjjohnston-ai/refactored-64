@@ -10,7 +10,7 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-MARKER = "FRONTEND_REPAIR_V2"
+MARKER = "FRONTEND_REPAIR_V3"
 
 
 def replace_once(source: str, old: str, new: str, name: str) -> str:
@@ -25,11 +25,9 @@ def replace_c_function(source: str, signature_start: str, replacement: str, name
     start = source.find(signature_start)
     if start < 0:
         raise ValueError(f"Could not find start of {name}")
-
     brace = source.find("{", start)
     if brace < 0:
         raise ValueError(f"Could not find opening brace of {name}")
-
     depth = 0
     index = brace
     while index < len(source):
@@ -44,12 +42,12 @@ def replace_c_function(source: str, signature_start: str, replacement: str, name
                     end += 1
                 return source[:start] + replacement.strip() + "\n\n" + source[end:]
         index += 1
-
     raise ValueError(f"Could not find closing brace of {name}")
 
 
 def insert_before_once(source: str, anchor: str, inserted: str, name: str) -> str:
-    if inserted.strip() in source:
+    signature = inserted.strip().splitlines()[0].strip()
+    if signature in source:
         return source
     count = source.count(anchor)
     if count != 1:
@@ -133,13 +131,13 @@ def patch_main(path: Path) -> None:
 
     renderer_line = "        renderer->draw( &renderState, cameraPos, &marioState, &marioGeometry );"
     renderer_wrapped = "        if (!mario_goldeneye_ui_frontend_active()) renderer->draw( &renderState, cameraPos, &marioState, &marioGeometry );"
-    if renderer_wrapped not in source:
-        source = replace_once(source, renderer_line, renderer_wrapped, "renderer draw frontend gate")
+    if renderer_wrapped not in source and renderer_line in source:
+        source = source.replace(renderer_line, renderer_wrapped, 1)
 
     coin_draw = "#ifndef GL33_CORE\n        mario_goldeneye_coins_draw_gl20();\n#endif"
     coin_draw_wrapped = "#ifndef GL33_CORE\n        if (!mario_goldeneye_ui_frontend_active()) mario_goldeneye_coins_draw_gl20();\n#endif"
-    if coin_draw_wrapped not in source:
-        source = replace_once(source, coin_draw, coin_draw_wrapped, "coin draw frontend gate")
+    if coin_draw_wrapped not in source and coin_draw in source:
+        source = source.replace(coin_draw, coin_draw_wrapped, 1)
 
     path.write_text(source, encoding="utf-8")
 
@@ -165,11 +163,11 @@ def patch_collectible_gl(path: Path) -> None:
 def patch_ui(path: Path) -> None:
     source = path.read_text(encoding="utf-8")
 
-    if "UI_FRONTEND_REPAIR_V2" not in source:
+    if "UI_FRONTEND_REPAIR_V3" not in source:
         source = replace_once(
             source,
             "static int gTexturesReady=0;\nstatic int gPaused=0;",
-            "static int gTexturesReady=0;\n// UI_FRONTEND_REPAIR_V2\nenum UiMode { UI_MODE_MISSION_SELECT = 0, UI_MODE_GAME = 1 };\nstatic int gMode=UI_MODE_MISSION_SELECT;\nstatic GLint gPreviousMatrixMode=GL_MODELVIEW;\nstatic int gPaused=0;",
+            "static int gTexturesReady=0;\n// UI_FRONTEND_REPAIR_V3\nenum UiMode { UI_MODE_MISSION_SELECT = 0, UI_MODE_GAME = 1 };\nstatic int gMode=UI_MODE_MISSION_SELECT;\nstatic GLint gPreviousMatrixMode=GL_MODELVIEW;\nstatic int gPaused=0;",
             "UI mode state",
         )
         source = replace_once(
@@ -185,7 +183,7 @@ def patch_ui(path: Path) -> None:
             "UI GL pop state",
         )
 
-    menu_functions = r'''
+    helper_functions = r'''
 static void ge_fullscreen_backdrop(unsigned char alpha)
 {
     glDisable(GL_TEXTURE_2D);
@@ -218,34 +216,12 @@ static void ge_outline_box(float x0,float y0,float x1,float y1)
     glEnd();
     glEnable(GL_TEXTURE_2D);
 }
-
-static void draw_mission_select_page(void)
-{
-    const unsigned int GE_GREEN=0x00ff00d8u;
-    const unsigned int GE_LIGHT_GREEN=0xa0ffa0f0u;
-    ge_fullscreen_backdrop(235);
-    ge_text(38.0f,23.0f,"goldeneye 64 x super mario 64",GE_LIGHT_GREEN);
-    ge_outline_box(34.0f,44.0f,286.0f,174.0f);
-    ge_text(52.0f,57.0f,"select mission",GE_LIGHT_GREEN);
-    ge_text(58.0f,79.0f,"> mission 1: dam",GE_GREEN);
-    ge_text(76.0f,96.0f,"agent",GE_GREEN);
-    ge_text(76.0f,112.0f,"3 power stars",GE_GREEN);
-    ge_text(76.0f,128.0f,"mario as bond",GE_LIGHT_GREEN);
-    ge_text(48.0f,190.0f,"return/start: begin    esc: pause later",GE_GREEN);
-}
-
-static void draw_intro_overlay(void)
-{
-    ge_outline_box(50.0f,176.0f,272.0f,222.0f);
-    ge_text(62.0f,187.0f,"mario is bond",0xa0ffa0f0u);
-    ge_text(62.0f,203.0f,"a / b / z skips intro",0x00ff00d8u);
-}
 '''
     source = insert_before_once(
         source,
-        "void mario_goldeneye_ui_handle_input",
-        menu_functions,
-        "UI frontend page insertion",
+        "static void draw_status_page",
+        helper_functions,
+        "UI primitive helpers",
     )
 
     status_page = r'''static void draw_status_page(void)
@@ -283,6 +259,36 @@ static void draw_intro_overlay(void)
 '''
     source = replace_c_function(source, "static void draw_objectives_page", objectives_page, "watch objectives page")
 
+    menu_functions = r'''
+static void draw_mission_select_page(void)
+{
+    const unsigned int GE_GREEN=0x00ff00d8u;
+    const unsigned int GE_LIGHT_GREEN=0xa0ffa0f0u;
+    ge_fullscreen_backdrop(235);
+    ge_text(38.0f,23.0f,"goldeneye 64 x super mario 64",GE_LIGHT_GREEN);
+    ge_outline_box(34.0f,44.0f,286.0f,174.0f);
+    ge_text(52.0f,57.0f,"select mission",GE_LIGHT_GREEN);
+    ge_text(58.0f,79.0f,"> mission 1: dam",GE_GREEN);
+    ge_text(76.0f,96.0f,"agent",GE_GREEN);
+    ge_text(76.0f,112.0f,"3 power stars",GE_GREEN);
+    ge_text(76.0f,128.0f,"mario as bond",GE_LIGHT_GREEN);
+    ge_text(48.0f,190.0f,"return/start: begin    esc: pause later",GE_GREEN);
+}
+
+static void draw_intro_overlay(void)
+{
+    ge_outline_box(50.0f,176.0f,272.0f,222.0f);
+    ge_text(62.0f,187.0f,"mario is bond",0xa0ffa0f0u);
+    ge_text(62.0f,203.0f,"a / b / z skips intro",0x00ff00d8u);
+}
+'''
+    source = insert_before_once(
+        source,
+        "void mario_goldeneye_ui_handle_input",
+        menu_functions,
+        "UI frontend page insertion",
+    )
+
     new_handle = r'''void mario_goldeneye_ui_handle_input(int pauseDown,int leftDown,int rightDown)
 {
     if(gMode==UI_MODE_MISSION_SELECT){
@@ -307,14 +313,12 @@ static void draw_intro_overlay(void)
 '''
     source = replace_c_function(source, "void mario_goldeneye_ui_handle_input", new_handle, "UI input handler")
 
-    paused_function = "int mario_goldeneye_ui_paused(void){ return gPaused || gMode==UI_MODE_MISSION_SELECT; }"
-    source = replace_c_function(source, "int mario_goldeneye_ui_paused", paused_function, "UI pause predicate")
+    paused_source = "int mario_goldeneye_ui_paused(void){ return gPaused; }"
+    paused_replacement = "int mario_goldeneye_ui_paused(void){ return gPaused || gMode==UI_MODE_MISSION_SELECT; }\n\nint mario_goldeneye_ui_frontend_active(void){ return gMode==UI_MODE_MISSION_SELECT; }"
     if "mario_goldeneye_ui_frontend_active" not in source:
-        source = source.replace(
-            paused_function + "\n\n",
-            paused_function + "\n\nint mario_goldeneye_ui_frontend_active(void){ return gMode==UI_MODE_MISSION_SELECT; }\n\n",
-            1,
-        )
+        source = replace_once(source, paused_source, paused_replacement, "UI pause/frontend predicates")
+    else:
+        source = source.replace(paused_source, "int mario_goldeneye_ui_paused(void){ return gPaused || gMode==UI_MODE_MISSION_SELECT; }")
 
     new_draw = r'''void mario_goldeneye_ui_draw_gl20(const struct SM64MarioState *marioState)
 {
@@ -334,6 +338,7 @@ static void draw_intro_overlay(void)
 }
 '''
     source = replace_c_function(source, "void mario_goldeneye_ui_draw_gl20", new_draw, "UI draw function")
+
     path.write_text(source, encoding="utf-8")
 
 
