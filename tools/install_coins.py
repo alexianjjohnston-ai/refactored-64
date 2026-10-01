@@ -386,9 +386,9 @@ def c_source(placements, coin_frames, star_asset):
     red_star = placements["red_star"]
     exploration = placements["exploration_star"]
     star_rows = (
-        "    {{ {%.3ff, %.3ff, %.3ff}, 0, 0, 0, STAR_RED }},\n"
-        "    {{ {0.0f, 0.0f, 0.0f}, 0, 0, 0, STAR_HUNDRED }},\n"
-        "    {{ {%.3ff, %.3ff, %.3ff}, 1, 0, 0, STAR_EXPLORATION }}"
+        "    {{%.3ff, %.3ff, %.3ff}, 0, 0, 0, STAR_RED},\n"
+        "    {{0.0f, 0.0f, 0.0f}, 0, 0, 0, STAR_HUNDRED},\n"
+        "    {{%.3ff, %.3ff, %.3ff}, 1, 0, 0, STAR_EXPLORATION}"
         % (*red_star, *exploration)
     )
 
