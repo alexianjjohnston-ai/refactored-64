@@ -23,6 +23,10 @@ BOUNDARY_ABOVE = 1200
 SPAWN_CLEARANCE = 60
 FALL_MARGIN = 3000
 
+# Dam's first single-player Spawn command in GoldenEye's original intro uses
+# pad 33. Its pad position is the canonical mission-start position.
+DAM_MISSION_START_RAW = (4719.0, -18.0, 3949.0)
+
 
 def _area2(points):
     return sum(
@@ -317,6 +321,15 @@ def build_collision_from_tiles(tiles, origin, scale, candidate_spawn):
     return floors + walls, spawn, metadata
 
 
+def dam_mission_start(origin, scale):
+    """Return GoldenEye Dam's canonical first-player mission start in world units."""
+    return _transform(DAM_MISSION_START_RAW, origin, scale)
+
+
 def build_dam_collision(rom, origin, scale, candidate_spawn):
     tiles = extract_dam_stan(rom)
-    return build_collision_from_tiles(tiles, origin, scale, candidate_spawn)
+    # Ignore the old render-mesh-derived candidate for Dam. GoldenEye's intro
+    # explicitly starts player 0 at pad 33; snap that authentic start onto the
+    # nearest legal STAN floor so Mario begins where the mission actually starts.
+    mission_start = dam_mission_start(origin, scale)
+    return build_collision_from_tiles(tiles, origin, scale, mission_start)

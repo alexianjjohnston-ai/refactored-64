@@ -5,7 +5,13 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parents[1] / "tools"))
 
-from stan_collision import build_collision_from_tiles, parse_stan, triangulate_polygon
+from stan_collision import (
+    DAM_MISSION_START_RAW,
+    build_collision_from_tiles,
+    dam_mission_start,
+    parse_stan,
+    triangulate_polygon,
+)
 
 
 def normal_y(triangle):
@@ -26,6 +32,13 @@ class StanCollisionTests(unittest.TestCase):
                 (0, 0, 10, links[3]),
             ],
         }]
+
+    def test_dam_mission_start_uses_original_spawn_pad(self):
+        self.assertEqual(DAM_MISSION_START_RAW, (4719.0, -18.0, 3949.0))
+        self.assertEqual(
+            dam_mission_start((-303.0, -200.0, -1008.5), 4.0),
+            (20088, 728, 19830),
+        )
 
     def test_concave_polygon_ear_clips(self):
         points = [(0, 0, 0), (10, 0, 0), (5, 0, 5), (10, 0, 10), (0, 0, 10)]

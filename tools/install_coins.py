@@ -14,7 +14,7 @@ from pathlib import Path
 import shutil
 
 from install_facility import extract
-from stan_collision import extract_dam_stan, triangulate_polygon
+from stan_collision import dam_mission_start, extract_dam_stan, triangulate_polygon
 
 MARKER = "// MARIO_GOLDENEYE_COINS_V1"
 BACKUP = "coins-backup"
@@ -162,6 +162,9 @@ static void draw_coin_disc(float z, float normal) {{
 }}
 
 void mario_goldeneye_coins_draw_gl20(void) {{
+    GLint previousMatrixMode = GL_MODELVIEW;
+    glGetIntegerv(GL_MATRIX_MODE, &previousMatrixMode);
+    glMatrixMode(GL_MODELVIEW);
     glPushAttrib(GL_ENABLE_BIT | GL_CURRENT_BIT | GL_LIGHTING_BIT | GL_POLYGON_BIT);
     glDisable(GL_TEXTURE_2D);
     glDisable(GL_LIGHTING);
@@ -190,6 +193,7 @@ void mario_goldeneye_coins_draw_gl20(void) {{
     }}
 
     glPopAttrib();
+    glMatrixMode(previousMatrixMode);
 }}
 """
 
@@ -264,6 +268,7 @@ def install(root, rom, level):
     )
     if level == "dam":
         tiles = extract_dam_stan(rom_bytes)
+        spawn = dam_mission_start(transform_data["origin"], transform_data["scale"])
         positions = choose_coin_positions(
             tiles, transform_data["origin"], transform_data["scale"], spawn
         )
