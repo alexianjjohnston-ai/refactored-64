@@ -4,7 +4,8 @@ from __future__ import annotations
 import argparse,json,subprocess,sys
 from pathlib import Path
 from asset_cache import AssetCache,fingerprint,sha1_file,sha256_file
-from sm64_assets import ASSET_CATALOG,MARIO_SHA1,write_power_star_asset,write_sm64_hud_asset,write_yellow_coin_asset\nfrom goldeneye_ui_assets import write_bank_gothic_asset
+from sm64_assets import ASSET_CATALOG,MARIO_SHA1,write_power_star_asset,write_sm64_hud_asset,write_yellow_coin_asset
+from goldeneye_ui_assets import write_bank_gothic_asset
 
 TOOLS=Path(__file__).resolve().parent
 GOLDENEYE_SHA1="abe01e4aeb033b6c0836819f549c791b26cfde83"
